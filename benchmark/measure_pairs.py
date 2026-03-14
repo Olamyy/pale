@@ -77,7 +77,7 @@ class CheckpointPairMeasurer:
 
     def _extract_pytorch(self, path: Path) -> Dict[str, np.ndarray]:
         """Extract tensors from PyTorch checkpoint."""
-        state_dict = load_pytorch_checkpoint(None, path)
+        state_dict = load_pytorch_checkpoint(path)
         return extract_tensors_pytorch(state_dict)
 
     def _measure_tensors(

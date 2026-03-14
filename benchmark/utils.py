@@ -42,9 +42,9 @@ def save_pytorch_checkpoint(model: torch.nn.Module, path: Path) -> None:
     torch.save(model.state_dict(), path)
 
 
-def load_pytorch_checkpoint(model: torch.nn.Module, path: Path) -> None:
+def load_pytorch_checkpoint(path: Path) -> Dict[str, Any]:
     """Load PyTorch model state_dict from disk."""
-    model.load_state_dict(torch.load(path, weights_only=True))
+    return torch.load(path, weights_only=True)
 
 
 def checkpoint_to_bytes(path: Path) -> bytes:

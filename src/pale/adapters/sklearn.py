@@ -1,3 +1,4 @@
+import copy
 from typing import Any, Dict, Iterator, Tuple
 
 import numpy as np
@@ -52,8 +53,6 @@ class SklearnAdapter:
         original must have the same tree count as the model extract() was called on.
         Raises AdapterError if any expected tree key is missing from tensors.
         """
-        import copy
-
         model = copy.deepcopy(original)
 
         if hasattr(model, "estimators_") and len(model.estimators_) > 0:
@@ -89,9 +88,7 @@ class SklearnAdapter:
         tensors: Dict[str, np.ndarray] = {}
         for i, tree in self._iter_trees(model):
             t = tree.tree_
-            tensors[self._tree_key(i, "features")] = (
-                t.feature.copy()
-            )  # int (platform-dependent)
+            tensors[self._tree_key(i, "features")] = t.feature.copy()
             tensors[self._tree_key(i, "thresholds")] = t.threshold.copy()  # float64
             tensors[self._tree_key(i, "values")] = t.value.flatten().copy()  # float64
         return tensors

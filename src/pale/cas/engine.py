@@ -44,6 +44,9 @@ class CASEngine:
     def backend(self) -> CASBackend:
         return self._backend
 
+    def delete_chunk(self, hash: str) -> None:
+        self._backend.delete(hash)
+
     def shutdown(self, wait: bool = True) -> None:
         """Shut down the shared thread pool. Call when the engine is no longer needed."""
         self._executor.shutdown(wait=wait)

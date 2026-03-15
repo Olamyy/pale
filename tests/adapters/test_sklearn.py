@@ -5,6 +5,8 @@ from sklearn.linear_model import LinearRegression
 
 from pale.adapters.sklearn import SklearnAdapter
 from pale.errors import AdapterError
+from pale.hashing import hash_chunk
+from pale.serialization import tensor_to_bytes
 
 
 def _trained_gbm(
@@ -107,10 +109,6 @@ def test_gbm_multiclass_round_trip():
 
 
 def test_warm_start_frozen_trees_identical():
-    """Per-tree storage: frozen trees in a warm-start continuation must be byte-identical."""
-    from pale.hashing import hash_chunk
-    from pale.serialization import tensor_to_bytes
-
     adapter = SklearnAdapter()
     rng = np.random.default_rng(0)
     X = rng.standard_normal((150, 4))

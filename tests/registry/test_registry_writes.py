@@ -1,4 +1,3 @@
-"""Tests for Registry write operations: register_checkpoint, delete_checkpoint, gc."""
 
 import sqlite3
 from datetime import datetime, timedelta, timezone

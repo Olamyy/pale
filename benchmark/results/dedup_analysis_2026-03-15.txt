@@ -1,0 +1,232 @@
+Pale Dedup Analysis — Three Separate Measurements
+Run date: 2026-03-15
+
+This corrects dedup_comparison_2026-03-15.txt, which conflated three distinct
+phenomena. Each is measured independently below.
+
+=======================================================================
+MEASUREMENT 1: No-op fast path effectiveness
+=======================================================================
+What fraction of tensors per step are byte-identical to the previous step?
+This is the sole driver of the DVC comparison results.
+
+--- sklearn ---
+Overall: 100.0% of tensor-steps are byte-identical
+
+Every tree tensor (features/thresholds/values) is 100% identical across all
+19 consecutive steps. This is expected: warm_start=True freezes old trees and
+only appends new ones. The per-tree extraction perfectly exposes this structure.
+There are ZERO changed tensors across the entire sequence.
+
+Chunk-level dedup: N/A — no changed tensors exist.
+
+--- xgboost ---
+Overall: 90.9% of tensor-steps are byte-identical
+
+  tree_000000 through tree_000009: 100% identical (frozen after creation)
+  __skeleton__: 0% identical (unique every step)
+
+Exact accounting:
+  Step 1:     11 unique writes (1 skeleton + 10 trees)
+  Steps 2-20: 190 new tree tensors (10 new trees × 19 steps)
+              + 19 unique skeletons (skeleton changes each step)
+  Total CAS writes: 220 (no dedup within CAS writes — all are unique)
+
+Why DVC stores all 20 files: every checkpoint file is larger than the previous
+(growing tree count), so no two .ubj files are byte-identical. DVC compresses
+each in full.
+
+Why Pale is 79.2% smaller: it stores each frozen tree exactly once (at step
+of creation), then reuses the stored ChunkRef via the no-op fast path. DVC
+stores the entire growing file each time, paying O(n²/2) for frozen content.
+
+Skeleton byte sizes: 604B (step 1) → 2036B (step 20). Unique each step.
+Chunk-level dedup for __skeleton__: 0.0% — single chunk, fully replaced.
+
+--- pytorch ---
+Overall: 39.5% of tensor-steps are byte-identical
+
+  Layers 0-4 (backbone, explicitly frozen at epoch 11): 52.6% identical
+    Steps 1-10: all layers training (no no-op hits for backbone)
+    Steps 11-19: backbone frozen via requires_grad_(False) — no-op fires
+    10 frozen steps / 19 consecutive pairs = 52.6%
+
+  Verified: backbone weight tensors (e.g. 0.weight, 2.weight) are byte-identical
+  at epoch 10→11 and at epoch 11→12. The 52.6% identity rate is from genuine
+  requires_grad_(False) freezing, not batchnorm convergence.
+
+  Layer 6 (head, trains throughout): 0% identical — changes every epoch
+
+Exact PyTorch savings accounting:
+  Backbone layers 0, 2, 4 (3 layers × weights + bias = 6 tensors):
+    10 unique versions each (epochs 1-10); epochs 11-20 are no-ops
+    Compressed sizes: 0.weight=58.3KB, 2.weight=236KB, 4.weight=236KB,
+                      0.bias≈1KB, 2.bias≈1KB, 4.bias≈1KB
+
+  Head layer 6 (weights + bias = 2 tensors):
+    20 unique versions (all epochs differ)
+    Compressed sizes: 6.weight=9.2KB, 6.bias≈0KB
+
+  Pale total = (58.3+236+236+1+1+1)×10 + (9.2+0.05)×20 = 5,330KB + 186KB = 5,516KB
+  Actual Pale: 5,517.5KB ✓
+
+Why 49.4% savings vs DVC despite only 39.5% no-op rate:
+  DVC stores 20 full .pt files × ~545KB compressed = 10,895KB
+  Each .pt file contains all 8 tensors + pickle overhead (~3.6KB)
+  For epochs 11-20, DVC pays the full 545KB even though only layer 6 changed
+  Pale pays only for layer 6's 10 versions × ~9.2KB each
+
+  The gap between 39.5% no-op rate and 49.4% storage savings is explained by
+  backbone tensors being much larger than head tensors: freezing 6 large tensors
+  (533KB compressed per step) while only writing 1 small tensor (9.2KB per step)
+  produces outsized storage savings relative to the raw no-op fraction.
+
+=======================================================================
+MEASUREMENT 2: Chunk-level dedup for changed tensors
+=======================================================================
+For tensors that are NOT byte-identical between steps, do any chunks within
+them match? This is what "tensor-level chunking" would actually contribute
+beyond the no-op fast path.
+
+sklearn:  N/A — no changed tensors exist in this sequence.
+xgboost:  0.0% — only changed tensor is __skeleton__ (<2KB, single chunk).
+pytorch:  0.0% — all changed weight tensors fit in one 256KB chunk each.
+            (0.weight=64KB, 2.weight=256KB, 4.weight=256KB, 6.weight=10KB)
+            When a tensor fits in one chunk, chunk-level dedup = tensor identity.
+
+Result: chunk-level dedup contributes ZERO in these benchmark scenarios.
+The CAS chunking layer is correct and functional but requires:
+  - Tensors larger than chunk_size where only some byte ranges change, OR
+  - Very large models (LLMs, ResNet-50+) where individual weight tensors
+    are multiple GBs and only specific rows/columns are updated per step.
+
+=======================================================================
+MEASUREMENT 3: Genuine cross-run dedup
+=======================================================================
+Two independent runs from the same dataset but different random seeds (0 vs 99).
+
+sklearn (seed=0 vs seed=99):
+  Run 1 unique chunks:  600
+  Run 2 unique chunks:  600
+  Shared (R1 ∩ R2):     0 (0.0%)
+  New in run 2:         600
+
+xgboost (seed=0 vs seed=99):
+  Run 1 unique chunks:  220
+  Run 2 unique chunks:  220
+  Shared (R1 ∩ R2):     0 (0.0%)
+  New in run 2:         220
+
+Note: an earlier version of this measurement reported Run 2 total chunks as
+6,300 (sklearn) and 2,120 (xgboost), producing an apparent asymmetry vs Run 1's
+600 and 220. This was a counting error: Run 1 deduplicated into a set (unique
+hashes only) while Run 2 counted all chunk evaluations including repeats across
+growing checkpoints. The corrected measurement counts unique chunks in both runs
+and takes the set intersection. Both runs produce the same unique chunk count
+(expected, since both train 20 warm-start checkpoints to the same depth).
+
+pytorch: not measured (requires two independent training runs)
+
+Result for different-seed runs: 0% cross-run chunk sharing for tree models.
+GBM and XGBoost trees are fully determined by the random seed — different seeds
+produce entirely different tree structures, split points, and threshold values.
+No chunk overlap is expected or observed.
+
+What IS tested by the "100% cross-run savings" in dedup_comparison.py:
+  Both runs load from the exact same checkpoint files on disk. The second run's
+  chunks are byte-for-byte identical to the first run's chunks. This only tests
+  that batch_has() correctly identifies already-stored chunks — not a
+  meaningful cross-run scenario.
+
+When genuine cross-run dedup would be non-zero:
+  Transfer learning / fine-tuning from a shared base model is the primary case.
+  If a pre-trained base model (e.g. GPT-2, ResNet-50) is loaded and fine-tuned
+  N different ways, all N runs share the base model tensors. Every chunk from
+  the base model exists in the CAS from the first run; all subsequent runs pay
+  zero for those chunks. This is the real cross-run story but it requires large
+  pre-trained models to demonstrate — not generated synthetic checkpoints.
+
+=======================================================================
+CORRECTED INTERPRETATION
+=======================================================================
+
+What Pale actually does well:
+  Model-aware tensor identity: by extracting per-tree or per-layer tensors,
+  Pale skips CAS writes entirely for frozen structure. This is the source of
+  the 79–94% storage savings vs DVC and the 49.4% savings for fine-tuning.
+
+  The mechanism is model-specific:
+    sklearn/XGBoost: per-tree extraction → frozen trees → 100% no-op for old trees
+    PyTorch fine-tuning: per-layer extraction → frozen backbone → 52.6% no-op
+                         for backbone tensors (which dominate storage)
+
+  DVC cannot do this because it doesn't know what a "frozen tree" or "frozen
+  layer" is. It operates at the file level. The adapter layer is the actual
+  differentiator.
+
+Note on XGBoost mechanism vs sklearn mechanism:
+  sklearn: trees are structurally frozen — the internal tree_ Cython object
+    is unchanged. Per-tree extraction exposes this directly. These savings are
+    unconditional: any warm_start=True training sequence will produce them,
+    regardless of dataset or hyperparameter changes.
+
+  XGBoost: trees are not "frozen" in the same structural sense — they are
+    stored as JSON bytes that happen to be identical because warm-start does
+    not re-train old boosting rounds. The savings come from avoiding redundant
+    re-storage of the growing model file (DVC stores the whole growing .ubj
+    each time; Pale stores each tree once at creation). The mechanism is the
+    same (per-tree identity via no-op fast path) but the underlying reason is
+    different (serialization identity from warm-start, not structural freezing).
+
+  XGBoost savings are serialization-dependent: if XGBoost changes its JSON
+    serialization format between versions, or if any model metadata included in
+    the per-tree JSON changes between warm-start steps, the no-op fast path stops
+    firing silently and savings drop to zero. This is enforced by:
+    tests/adapters/test_xgboost.py::test_frozen_trees_identical_across_warmstart
+    which asserts byte-identical tree tensors across a warm-start step and will
+    break if the serialization assumption ever fails.
+
+What Pale does NOT yet demonstrate:
+  1. Sub-tensor chunk-level dedup. The CAS chunking layer is implemented
+     correctly but produces zero additional savings beyond tensor identity at
+     these model sizes. For chunk-level dedup to add value, tensors must be
+     larger than the chunk size AND have localized updates (only specific byte
+     ranges change per step). Examples: attention weight matrices in LLMs, or
+     large embedding tables with sparse gradient updates.
+  2. Genuine cross-run dedup. Independent runs with different random seeds
+     share 0 chunks for tree models (different seeds → different structures).
+     The transfer-learning scenario (N fine-tuning runs from one shared base
+     model) is the correct test: base model chunks would be 100% shared across
+     all runs. This requires large pre-trained models to demonstrate.
+
+Corrected and complete value proposition:
+  PROVEN: Pale stores 79–94% less than DVC for warm-start tree model sequences
+    (sklearn, XGBoost) and 49% less for fine-tuning with explicit layer freezing
+    (PyTorch). The mechanism is model-aware tensor identity: the adapter layer
+    exposes frozen sub-structures (individual trees, individual layers) that
+    file-level tools like DVC cannot see. DVC can't do this not because it lacks
+    chunking but because it doesn't know what a "frozen tree" or "frozen layer"
+    is. The adapter is the differentiator.
+
+  STRUCTURALLY SOUND, UNPROVEN: Sub-tensor chunk dedup for partial updates on
+    large tensors. If a tensor is larger than the chunk size and only some byte
+    ranges change per step, the CAS layer finds and reuses unchanged chunks
+    without any adapter change. This is the right architecture for LLM fine-
+    tuning but has not been demonstrated at these model sizes.
+
+  UNPROVEN, REQUIRES DIFFERENT TEST: Cross-run dedup for transfer learning from
+    shared base models. Base model tensors stored once; all derived fine-tuning
+    runs share those chunks for free. This is a real and important use case but
+    requires large pre-trained models and is not tested here.
+
+=======================================================================
+BENCHMARK FILES
+=======================================================================
+Script:      benchmark/dedup_analysis.py    (three-part analysis)
+Script:      benchmark/dedup_comparison.py  (DVC bytes vs Pale bytes)
+Checkpoints: benchmark/data/checkpoints/sklearn/   (20 × warm-start pkl)
+             benchmark/data/checkpoints/xgboost/   (20 × warm-start ubj)
+             benchmark/data/checkpoints/pytorch/   (20 × fine-tune pt)
+Adapters:    src/pale/adapters/sklearn.py   (per-tree arrays)
+             src/pale/adapters/xgboost.py   (__skeleton__ + tree_NNNNNN JSON)
+             src/pale/adapters/pytorch.py   (state_dict keys → numpy arrays)

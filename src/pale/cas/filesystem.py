@@ -7,7 +7,7 @@ from typing import Dict, List
 import zstandard as zstd
 
 from pale.cas.backend import CASBackend
-from pale.errors import StorageError
+from pale.errors import CorruptChunkError, StorageError
 
 _ZSTD_LEVEL = 3
 _cctx = zstd.ZstdCompressor(level=_ZSTD_LEVEL)
@@ -62,7 +62,12 @@ class FilesystemBackend(CASBackend):
             raise StorageError(f"Chunk not found: {hash}")
         except OSError as e:
             raise StorageError(f"Failed to read chunk {hash}: {e}") from e
-        return _dctx.decompress(compressed)
+        try:
+            return _dctx.decompress(compressed)
+        except Exception as e:
+            raise CorruptChunkError(
+                f"Chunk decompression failed for {hash}: {e}"
+            ) from e
 
     def batch_has(self, hashes: List[str]) -> Dict[str, bool]:
         """Check existence of multiple hashes in parallel."""

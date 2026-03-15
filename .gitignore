@@ -39,6 +39,13 @@ benchmark/data/
 benchmark/results/
 !benchmark/results/.gitkeep
 
+# CAS chunk files
+*.chunk
+
+# Pale store directories
+pale_store/
+pale_data/
+
 *.md
 
 .vscode/

@@ -1,12 +1,3 @@
-"""Generate PyTorch checkpoint sequence for dedup benchmark.
-
-Trains a small MLP on synthetic data. Two phases:
-  Epochs 1–10:  full model training (all layers updating)
-  Epochs 11–20: freeze all layers except final linear head
-
-The frozen backbone phase is where tensor-level chunking fires —
-frozen layer tensors produce byte-identical arrays across checkpoints.
-"""
 
 import argparse
 from pathlib import Path

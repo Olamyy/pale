@@ -1,27 +1,6 @@
-"""
-Three-part dedup analysis for Pale vs DVC.
-
-Measures three distinct phenomena that were conflated in dedup_comparison.py:
-
-  1. No-op fast path effectiveness
-     What fraction of tensors per step are byte-identical to the previous step?
-     This is what drives the DVC comparison results. Reports per-tensor breakdown.
-
-  2. Chunk-level dedup effectiveness
-     For tensors that ARE NOT byte-identical, do any chunks within them match
-     across consecutive steps? Requires partially-changing tensors (e.g. large
-     weight matrices where only some rows update). Bypasses the no-op fast path
-     deliberately to measure what the CAS chunking layer actually contributes.
-
-  3. Cross-run dedup (genuine)
-     Two independent runs from the same base model but different random seeds.
-     Measures shared chunk hashes between the two runs at each step.
-"""
-
 import argparse
 import hashlib
 import pickle
-import tempfile
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -32,8 +11,6 @@ import zstandard as zstd
 
 from pale.adapters.sklearn import SklearnAdapter
 from pale.adapters.xgboost import XGBoostAdapter
-from pale.cas.engine import CASEngine
-from pale.cas.filesystem import FilesystemBackend
 from pale.hashing import hash_chunk
 from pale.chunking import chunk_bytes
 from pale.serialization import tensor_to_bytes

@@ -1,21 +1,3 @@
-"""
-Dedup comparison: file-level hashing (DVC-style) vs tensor-level chunking (Pale).
-
-Metric: bytes stored on disk, both sides compressed with zstd level 3.
-
-  DVC-simulated bytes: compress each unique file once, sum compressed sizes.
-                       Identical files stored once; changed files stored in full.
-
-  Pale bytes:          actual compressed chunk bytes in the CAS objects dir
-                       after saving all checkpoints into a single store.
-
-Both sides use zstd level 3, so the only remaining difference is dedup granularity:
-  - DVC deduplicates at file level (whole checkpoint = one hash)
-  - Pale deduplicates at chunk level (tensor slices = many hashes)
-
-The question: does sub-file chunking produce meaningfully more dedup than
-file-level hashing on realistic ML checkpoint sequences?
-"""
 
 import argparse
 import hashlib

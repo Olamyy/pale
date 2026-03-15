@@ -1,6 +1,6 @@
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional
 
@@ -212,8 +212,6 @@ class Registry:
         responsible for deleting the corresponding .chunk files —
         Registry does not know filesystem paths for chunk files.
         """
-        from datetime import timedelta
-
         cutoff = (
             datetime.now(timezone.utc) - timedelta(hours=grace_period_hours)
         ).strftime("%Y-%m-%d %H:%M:%S")

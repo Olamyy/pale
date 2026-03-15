@@ -36,8 +36,8 @@ htmlcov/
 benchmark/data/checkpoints/
 benchmark/data/
 !benchmark/data/.gitkeep
-benchmark/results/
-!benchmark/results/.gitkeep
+benchmark/results/*.png
+benchmark/results/*.svg
 
 # CAS chunk files
 *.chunk
@@ -51,3 +51,4 @@ pale_data/
 .vscode/
 .idea/
 *.iml
+benchmark/colab_dedup_analysis.py

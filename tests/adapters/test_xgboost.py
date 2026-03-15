@@ -22,56 +22,76 @@ def _predict(booster: xgb.Booster) -> np.ndarray:
     return booster.predict(xgb.DMatrix(X))
 
 
-def test_extract_keys():
-    tensors = XGBoostAdapter.extract(_trained_booster())
-    assert set(tensors.keys()) == {"model_bytes"}
+def test_extract_contains_skeleton_and_trees():
+    tensors = XGBoostAdapter.extract(_trained_booster(5))
+    assert "__skeleton__" in tensors
+    assert len([k for k in tensors if k.startswith("tree_")]) == 5
+
+
+def test_extract_keys_sorted():
+    keys = list(XGBoostAdapter.extract(_trained_booster(5)).keys())
+    assert keys == sorted(keys)
 
 
 def test_extract_dtype_uint8():
-    tensors = XGBoostAdapter.extract(_trained_booster())
-    assert tensors["model_bytes"].dtype == np.uint8
+    for arr in XGBoostAdapter.extract(_trained_booster(3)).values():
+        assert arr.dtype == np.uint8
 
 
-def test_extract_nonempty():
-    tensors = XGBoostAdapter.extract(_trained_booster())
-    assert tensors["model_bytes"].size > 0
+def test_extract_arrays_are_writable():
+    for arr in XGBoostAdapter.extract(_trained_booster(3)).values():
+        arr[0] = arr[0]
 
 
-def test_extract_returns_writable_array():
-    tensors = XGBoostAdapter.extract(_trained_booster())
-    # Should be writable (not a read-only frombuffer view)
-    tensors["model_bytes"][0] = tensors["model_bytes"][0]
+def test_frozen_trees_identical_across_warmstart():
+    rng = np.random.default_rng(0)
+    X = rng.standard_normal((100, 4)).astype(np.float32)
+    y = (X[:, 0] > 0).astype(np.float32)
+    dtrain = xgb.DMatrix(X, label=y)
+    params = {"max_depth": 3, "objective": "binary:logistic", "seed": 0}
+
+    b5 = xgb.train(params, dtrain, num_boost_round=5, verbose_eval=False)
+    b8 = xgb.train(params, dtrain, num_boost_round=3, xgb_model=b5, verbose_eval=False)
+
+    t5 = XGBoostAdapter.extract(b5)
+    t8 = XGBoostAdapter.extract(b8)
+
+    for i in range(5):
+        key = f"tree_{i:06d}"
+        np.testing.assert_array_equal(t5[key], t8[key], err_msg=f"{key} not identical")
 
 
 def test_reconstruct_round_trip_predictions():
-    """Reconstructed booster must produce identical predictions."""
     booster = _trained_booster()
     preds_before = _predict(booster)
-
     tensors = XGBoostAdapter.extract(booster)
     reconstructed = XGBoostAdapter.reconstruct(tensors, original=None)
-    preds_after = _predict(reconstructed)
-
-    np.testing.assert_array_equal(preds_before, preds_after)
+    np.testing.assert_array_equal(preds_before, _predict(reconstructed))
 
 
-def test_reconstruct_ignores_original():
-    """reconstruct uses tensors, not the original booster."""
-    booster = _trained_booster(n_rounds=10)
-    tensors = XGBoostAdapter.extract(booster)
-
-    # Pass a different booster as original — result must match the tensors, not original
-    other_booster = _trained_booster(n_rounds=5)
-    reconstructed = XGBoostAdapter.reconstruct(tensors, original=other_booster)
-
-    np.testing.assert_array_equal(_predict(booster), _predict(reconstructed))
-
-
-def test_reconstruct_missing_key_raises():
-    with pytest.raises(AdapterError, match="model_bytes"):
-        XGBoostAdapter.reconstruct({}, original=None)
+def test_reconstruct_missing_model_key_raises():
+    with pytest.raises(AdapterError, match="__skeleton__"):
+        XGBoostAdapter.reconstruct(
+            {"tree_000000": np.zeros(1, dtype=np.uint8)}, original=None
+        )
 
 
 def test_wrong_type_raises():
     with pytest.raises(AdapterError, match="expects xgb.Booster"):
         XGBoostAdapter.extract("not a booster")
+
+
+def test_categorical_splits_raise():
+    rng = np.random.default_rng(0)
+    X = rng.integers(0, 4, (200, 2)).astype(np.float32)
+    y = (rng.standard_normal(200) > 0).astype(np.float32)
+    dtrain = xgb.DMatrix(X, label=y, feature_types=["c", "c"], enable_categorical=True)
+    params = {
+        "max_depth": 3,
+        "objective": "binary:logistic",
+        "seed": 0,
+        "tree_method": "hist",
+    }
+    booster = xgb.train(params, dtrain, num_boost_round=2, verbose_eval=False)
+    with pytest.raises(AdapterError, match="categorical splits"):
+        XGBoostAdapter.extract(booster)

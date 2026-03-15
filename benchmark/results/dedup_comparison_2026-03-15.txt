@@ -1,0 +1,100 @@
+Pale vs DVC Dedup Benchmark
+Run date: 2026-03-15
+Host: macOS Darwin 25.3.0
+
+Methodology
+-----------
+DVC-simulated bytes: each unique checkpoint file compressed with zstd level 3,
+  stored once (file-level dedup). Identical files share one entry; changed files
+  stored in full.
+
+Pale bytes: actual compressed .chunk file sizes in the CAS objects directory
+  after saving all checkpoints into a single store (tensor-level dedup).
+
+Both sides use zstd level 3. The only variable is dedup granularity:
+  DVC  — deduplicates at file level (whole checkpoint = one hash)
+  Pale — deduplicates at chunk level (per tensor or per tree = many hashes)
+
+Cross-run: a second independent run over the same checkpoints shares the CAS
+  store. bytes_run2_additional = 0 means the second run wrote zero new bytes.
+
+Framework configurations
+------------------------
+sklearn:  GradientBoostingClassifier, warm_start=True, 20 checkpoints,
+          10 trees/step (10→200 trees total), 2000 samples, 20 features
+xgboost:  xgb.train() with xgb_model warm-start, 20 checkpoints,
+          10 rounds/step (10→200 rounds total), 2000 samples, 20 features
+pytorch:  4-layer MLP (64→256→256→256→10), 20 epochs on 1000 synthetic
+          samples; layers 0–5 frozen after epoch 10, only head (layer 6) trains
+
+Raw results
+-----------
+sklearn
+  Checkpoints : 20
+  Raw total   : 4.6MB
+  DVC bytes   : 1.4MB
+  Pale 256KB  : 80.1KB  (ratio=0.057, +94.3% vs DVC)
+  Pale 1MB    : 80.1KB  (ratio=0.057, +94.3% vs DVC)
+  Pale 4MB    : 80.1KB  (ratio=0.057, +94.3% vs DVC)
+  Cross-run   : 0.0B additional (+100.0% savings)
+
+xgboost
+  Checkpoints : 20
+  Raw total   : 2.8MB
+  DVC bytes   : 721.1KB
+  Pale 256KB  : 150.1KB (ratio=0.208, +79.2% vs DVC)
+  Pale 1MB    : 150.1KB (ratio=0.208, +79.2% vs DVC)
+  Pale 4MB    : 150.1KB (ratio=0.208, +79.2% vs DVC)
+  Cross-run   : 0.0B additional (+100.0% savings)
+
+pytorch
+  Checkpoints : 20
+  Raw total   : 11.6MB
+  DVC bytes   : 10.6MB
+  Pale 256KB  : 5.4MB   (ratio=0.506, +49.4% vs DVC)
+  Pale 1MB    : 5.4MB   (ratio=0.506, +49.4% vs DVC)
+  Pale 4MB    : 5.4MB   (ratio=0.506, +49.4% vs DVC)
+  Cross-run   : 0.0B additional (+100.0% savings)
+
+Summary table
+-------------
+Framework    Chunk  DVC        Pale       Ratio   vs DVC    Cross-run 2nd  Cross savings
+===================================================================================
+sklearn      256KB  1.4MB      80.1KB     0.057    +94.3%   0.0B           +100.0%
+sklearn      1MB    1.4MB      80.1KB     0.057    +94.3%   0.0B           +100.0%
+sklearn      4MB    1.4MB      80.1KB     0.057    +94.3%   0.0B           +100.0%
+xgboost      256KB  721.1KB    150.1KB    0.208    +79.2%   0.0B           +100.0%
+xgboost      1MB    721.1KB    150.1KB    0.208    +79.2%   0.0B           +100.0%
+xgboost      4MB    721.1KB    150.1KB    0.208    +79.2%   0.0B           +100.0%
+pytorch      256KB  10.6MB     5.4MB      0.506    +49.4%   0.0B           +100.0%
+pytorch      1MB    10.6MB     5.4MB      0.506    +49.4%   0.0B           +100.0%
+pytorch      4MB    10.6MB     5.4MB      0.506    +49.4%   0.0B           +100.0%
+
+Key observations
+----------------
+1. Chunk size is irrelevant across all three frameworks and all three sizes.
+   Savings are driven entirely by model-aware tensor extraction in the adapters,
+   not by chunking granularity. This confirms the adapter is doing the work.
+
+2. sklearn (+94.3%): Per-tree extraction means only new trees are stored per step.
+   20 checkpoints × 10 new trees/step = 200 writes, but 190 trees are frozen and
+   reused from the CAS. DVC stores a new compressed copy of the growing model file
+   each time.
+
+3. xgboost (+79.2%): Per-node JSON extraction (skeleton + tree_NNNNNN tensors).
+   Frozen trees produce byte-identical JSON bytes → identical BLAKE3 hashes →
+   CAS dedup fires. DVC stores full binary UBJ files, no sub-file savings.
+
+4. pytorch (+49.4%): Per-tensor state_dict extraction. Frozen backbone layers
+   (epochs 11–20, 3 of 4 layers frozen) produce identical weight tensors.
+   Only the head layer changes per checkpoint. DVC stores full .pt files each time.
+
+5. Cross-run dedup is perfect for all three frameworks: +100.0% savings,
+   0 bytes written by the second independent run. This is a free property of
+   content-addressed storage — same model bytes = same chunk hashes.
+
+Adapter implementations
+-----------------------
+sklearn  → src/pale/adapters/sklearn.py  (per-tree arrays: features/thresholds/values)
+xgboost  → src/pale/adapters/xgboost.py  (__skeleton__ + tree_NNNNNN JSON bytes)
+pytorch  → src/pale/adapters/pytorch.py  (state_dict keys → contiguous numpy arrays)

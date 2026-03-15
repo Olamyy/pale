@@ -2,22 +2,59 @@
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
+# Rust extension placeholder (maturin) — uncomment when adding Rust bindings for
+# hash_chunk and chunk_bytes (T4, T3). Replace setuptools build-system above with:
+#
+# [build-system]
+# requires = ["maturin>=1.0"]
+# build-backend = "maturin"
+#
+# [tool.maturin]
+# features = ["pyo3/extension-module"]
+# python-source = "src"
+
 [project]
 name = "pale"
-version = "0.0.1"
+version = "0.1.0"
 description = "Framework-agnostic checkpoint deduplication and delta storage engine"
 requires-python = ">=3.10"
+dependencies = [
+    "blake3>=0.3",
+    "zstandard>=0.21",
+    "msgspec>=0.18",
+    "numpy>=1.20",
+    "scikit-learn>=1.7.2",
+]
 
 [project.optional-dependencies]
 benchmark = [
-    "numpy>=1.20",
     "scikit-learn>=1.0",
     "xgboost>=1.5",
     "torch>=2.0",
     "torchvision>=0.15",
-    "zstandard>=0.21",
-    "blake3>=0.3",
     "pandas>=1.3",
     "tqdm>=4.60",
+]
+sklearn = [
+    "scikit-learn>=1.0",
+]
+xgboost = [
+    "xgboost>=1.5",
+]
+dev = [
     "pytest>=7.0",
+    "pytest-cov",
+]
+
+[project.scripts]
+pale = "pale.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.15.6",
 ]

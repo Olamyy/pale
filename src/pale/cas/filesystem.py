@@ -9,8 +9,6 @@ from pale.cas.backend import CASBackend
 from pale.errors import CorruptChunkError, StorageError
 
 _ZSTD_LEVEL = 3
-_cctx = zstd.ZstdCompressor(level=_ZSTD_LEVEL)
-_dctx = zstd.ZstdDecompressor()
 
 
 class FilesystemBackend(CASBackend):
@@ -38,7 +36,7 @@ class FilesystemBackend(CASBackend):
         if path.exists():
             return
         path.parent.mkdir(parents=True, exist_ok=True)
-        compressed = _cctx.compress(data)
+        compressed = zstd.ZstdCompressor(level=_ZSTD_LEVEL).compress(data)
         fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
         try:
             with os.fdopen(fd, "wb") as f:
@@ -61,7 +59,7 @@ class FilesystemBackend(CASBackend):
         except OSError as e:
             raise StorageError(f"Failed to read chunk {hash}: {e}") from e
         try:
-            return _dctx.decompress(compressed)
+            return zstd.ZstdDecompressor().decompress(compressed)
         except Exception as e:
             raise CorruptChunkError(
                 f"Chunk decompression failed for {hash}: {e}"

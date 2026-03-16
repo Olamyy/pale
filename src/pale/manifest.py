@@ -23,6 +23,12 @@ class CheckpointManifest(msgspec.Struct, frozen=True):
     format_version: int = 1
     pale_version: str = __version__
 
+    def __repr__(self) -> str:
+        return (
+            f"CheckpointManifest(run_id={self.run_id!r}, step={self.step}, "
+            f"tensors={list(self.tensors)}, created_at={self.created_at.isoformat()})"
+        )
+
 
 _encoder = msgspec.json.Encoder()
 _decoder = msgspec.json.Decoder(CheckpointManifest)

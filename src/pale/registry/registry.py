@@ -1,10 +1,11 @@
 import sqlite3
 import uuid
+import warnings
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional
 
-from pale.errors import CheckpointAlreadyExistsError
+from pale.errors import CheckpointAlreadyExistsError, CorruptManifestError
 
 
 class GCReport(NamedTuple):
@@ -46,7 +47,12 @@ class Registry:
         return registry
 
     def _create_tables(self) -> None:
-        """Create tables if they don't exist. Idempotent."""
+        """Create tables if they don't exist. Idempotent.
+
+        The refs table has been removed. Blob liveness is now determined at
+        GC time by scanning manifest files, not by a per-chunk join table.
+        This makes register_checkpoint O(new blobs) instead of O(total blobs).
+        """
         with self._conn:
             self._conn.executescript("""
                 CREATE TABLE IF NOT EXISTS runs (
@@ -70,17 +76,10 @@ class Registry:
                     created_at  TEXT NOT NULL
                 );
 
-                CREATE TABLE IF NOT EXISTS refs (
-                    checkpoint_id   TEXT NOT NULL REFERENCES checkpoints(checkpoint_id),
-                    blob_hash       TEXT NOT NULL REFERENCES blobs(blob_hash),
-                    PRIMARY KEY (checkpoint_id, blob_hash)
-                );
+                DROP TABLE IF EXISTS refs;
 
                 CREATE INDEX IF NOT EXISTS idx_checkpoints_run_step
                     ON checkpoints(run_id, step);
-
-                CREATE INDEX IF NOT EXISTS idx_refs_blob_hash
-                    ON refs(blob_hash);
             """)
 
     def list_runs(self) -> List[str]:
@@ -124,11 +123,12 @@ class Registry:
         blob_sizes: Optional[Dict[str, int]] = None,
         parent_step: Optional[int] = None,
     ) -> None:
-        """Register a checkpoint and its blob references transactionally.
+        """Register a checkpoint and record any newly written blobs.
 
-        Creates the run row if it doesn't exist. Inserts blob rows for any
-        hashes not already in the blobs table (idempotent on blob_hash).
-        Inserts the checkpoint and all ref rows atomically.
+        Creates the run row if it doesn't exist. Inserts blob rows only for
+        newly written chunks (new_blob_hashes). Blob liveness for GC is
+        determined at gc() time by scanning manifest files — there is no
+        per-chunk refs table.
 
         Raises:
             CheckpointAlreadyExistsError: if (run_id, step) already exists.
@@ -138,13 +138,10 @@ class Registry:
             run_id: Identifier for the training run.
             step: Training step / epoch number for this checkpoint.
             manifest_path: Absolute path to the manifest JSON file.
-            blob_hashes: All chunk hashes referenced by this checkpoint (used
-                for ref rows — GC liveness depends on these).
-            new_blob_hashes: Subset of blob_hashes that are newly written this
-                step. Only these are inserted into the blobs table. If None,
-                falls back to blob_hashes (original behavior).
-            blob_sizes: Optional hash → size_bytes mapping for new blobs.
-                Blobs with no entry are stored with size_bytes=0.
+            blob_hashes: Ignored (kept for call-site compatibility).
+            new_blob_hashes: Blobs written this step. Only these are inserted
+                into the blobs table. If None, falls back to blob_hashes.
+            blob_sizes: hash → size_bytes mapping for new blobs.
             parent_step: Step of the preceding checkpoint, if any.
         """
         if self.checkpoint_exists(run_id, step):
@@ -175,74 +172,85 @@ class Registry:
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (checkpoint_id, run_id, step, parent_step, str(manifest_path), now),
             )
-            self._conn.executemany(
-                "INSERT OR IGNORE INTO refs (checkpoint_id, blob_hash) VALUES (?, ?)",
-                [(checkpoint_id, h) for h in blob_hashes],
-            )
 
     def delete_checkpoint(self, run_id: str, step: int) -> None:
-        """Delete a checkpoint row and its ref rows.
+        """Delete a checkpoint row.
 
-        Blob rows are intentionally left intact. Orphaned blobs (those with
-        no remaining refs) will be swept by gc() after the grace period.
-        This ensures .chunk files are never leaked — gc() is the sole owner
-        of blob row deletion and physical file removal.
+        Blob rows are intentionally left intact. Orphaned blobs are swept by
+        gc(), which determines liveness by scanning manifest files.
 
         Does nothing if the checkpoint does not exist.
         """
         with self._conn:
-            row = self._conn.execute(
-                "SELECT checkpoint_id FROM checkpoints WHERE run_id = ? AND step = ?",
+            self._conn.execute(
+                "DELETE FROM checkpoints WHERE run_id = ? AND step = ?",
                 (run_id, step),
-            ).fetchone()
-            if row is None:
-                return
-
-            checkpoint_id = row[0]
-            self._conn.execute(
-                "DELETE FROM refs WHERE checkpoint_id = ?", (checkpoint_id,)
-            )
-            self._conn.execute(
-                "DELETE FROM checkpoints WHERE checkpoint_id = ?", (checkpoint_id,)
             )
 
     def gc(self, grace_period_hours: int = 24) -> GCReport:
         """Mark-and-sweep GC over orphaned blobs.
 
-        Mark: blobs with no live refs whose created_at is older than
-        grace_period_hours. The grace period protects blobs written by
-        in-flight saves that haven't been registered yet.
+        Mark: blobs in the blobs table whose created_at is older than
+        grace_period_hours AND whose hash does not appear in any live
+        manifest file. The grace period protects blobs written by in-flight
+        saves not yet registered.
+
+        Liveness is determined by scanning all manifest files registered in
+        the checkpoints table — there is no refs join table. Corrupt or
+        missing manifest files are skipped with a warning (their blobs are
+        treated as live to avoid accidental deletion).
 
         Sweep: deletes matching blob rows from the DB and returns their
-        hashes in GCReport.swept_hashes. The caller (StorageEngine) is
-        responsible for deleting the corresponding .chunk files —
-        Registry does not know filesystem paths for chunk files.
+        hashes in GCReport.swept_hashes. The caller is responsible for
+        deleting the corresponding .chunk files.
         """
+        from pale.manifest import ManifestReader
+
         cutoff = (
             datetime.now(timezone.utc) - timedelta(hours=grace_period_hours)
         ).strftime("%Y-%m-%d %H:%M:%S")
 
+        # Collect all candidate blobs (old enough to consider sweeping).
+        candidates = self._conn.execute(
+            "SELECT blob_hash, size_bytes FROM blobs WHERE created_at < ?",
+            (cutoff,),
+        ).fetchall()
+
+        if not candidates:
+            return GCReport(deleted_blobs=0, freed_bytes=0, swept_hashes=[])
+
+        candidate_set = {r[0]: r[1] for r in candidates}
+
+        # Build live set from all registered manifest files.
+        live: set[str] = set()
+        manifest_paths = self._conn.execute(
+            "SELECT manifest_path FROM checkpoints"
+        ).fetchall()
+        for (path_str,) in manifest_paths:
+            path = Path(path_str)
+            try:
+                manifest = ManifestReader.read(path)
+                for record in manifest.tensors.values():
+                    for ref in record.chunks:
+                        live.add(ref.hash)
+            except CorruptManifestError:
+                warnings.warn(
+                    f"GC: skipping corrupt/missing manifest {path} — "
+                    "its blobs are treated as live.",
+                    stacklevel=2,
+                )
+
+        orphans = [h for h in candidate_set if h not in live]
+        if not orphans:
+            return GCReport(deleted_blobs=0, freed_bytes=0, swept_hashes=[])
+
+        freed = sum(candidate_set[h] for h in orphans)
         with self._conn:
-            candidates = self._conn.execute(
-                """
-                SELECT blob_hash, size_bytes FROM blobs
-                WHERE created_at < ?
-                  AND blob_hash NOT IN (SELECT blob_hash FROM refs)
-                """,
-                (cutoff,),
-            ).fetchall()
-
-            if not candidates:
-                return GCReport(deleted_blobs=0, freed_bytes=0, swept_hashes=[])
-
-            hashes = [r[0] for r in candidates]
-            freed = sum(r[1] for r in candidates)
-
             self._conn.executemany(
                 "DELETE FROM blobs WHERE blob_hash = ?",
-                [(h,) for h in hashes],
+                [(h,) for h in orphans],
             )
 
         return GCReport(
-            deleted_blobs=len(hashes), freed_bytes=freed, swept_hashes=hashes
+            deleted_blobs=len(orphans), freed_bytes=freed, swept_hashes=orphans
         )

@@ -25,11 +25,7 @@ CREATE TABLE IF NOT EXISTS blobs (
     created_at  TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS refs (
-    checkpoint_id   TEXT NOT NULL REFERENCES checkpoints(checkpoint_id),
-    blob_hash       TEXT NOT NULL REFERENCES blobs(blob_hash),
-    PRIMARY KEY (checkpoint_id, blob_hash)
-);
+DROP TABLE IF EXISTS refs;
 """
 
 

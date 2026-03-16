@@ -1,10 +1,13 @@
 import sqlite3
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from pale.errors import CheckpointAlreadyExistsError
+from pale.manifest import CheckpointManifest, ManifestWriter
+from pale.models import TensorArrayRecord, ChunkRef
 from pale.registry.registry import Registry
 from pale.registry.schema import create_tables
 
@@ -29,6 +32,28 @@ def _insert_blob(
     reg._conn.commit()
 
 
+def _write_manifest(path: Path, blob_hashes: list[str]) -> None:
+    """Write a minimal manifest referencing the given blob hashes."""
+    tensors = {}
+    for i, h in enumerate(blob_hashes):
+        tensors[f"t{i}"] = TensorArrayRecord(
+            name=f"t{i}",
+            shape=[1],
+            dtype="float32",
+            byte_length=4,
+            full_hash=h,
+            chunks=[ChunkRef(hash=h, size=4)],
+        )
+    manifest = CheckpointManifest(
+        chunk_size=262144,
+        run_id="run_a",
+        step=1,
+        created_at=datetime.now(timezone.utc),
+        tensors=tensors,
+    )
+    ManifestWriter.write(manifest, path)
+
+
 def test_register_creates_run_if_missing():
     reg = _setup()
     reg.register_checkpoint("run_a", 1, Path("/m/1.json"), ["h1", "h2"])
@@ -44,8 +69,8 @@ def test_register_checkpoint_is_queryable():
 
 def test_register_blob_dedup_across_checkpoints():
     reg = _setup()
-    reg.register_checkpoint("run_a", 1, Path("/m/1.json"), ["shared", "h1"])
-    reg.register_checkpoint("run_a", 2, Path("/m/2.json"), ["shared", "h2"])
+    reg.register_checkpoint("run_a", 1, Path("/m/1.json"), [], new_blob_hashes=["shared", "h1"])
+    reg.register_checkpoint("run_a", 2, Path("/m/2.json"), [], new_blob_hashes=["shared", "h2"])
     row = reg._conn.execute(
         "SELECT COUNT(*) FROM blobs WHERE blob_hash = 'shared'"
     ).fetchone()
@@ -71,9 +96,9 @@ def test_register_duplicate_step_raises():
 
 def test_register_duplicate_step_no_side_effects():
     reg = _setup()
-    reg.register_checkpoint("run_a", 1, Path("/m/1.json"), ["existing_blob"])
+    reg.register_checkpoint("run_a", 1, Path("/m/1.json"), [], new_blob_hashes=["existing_blob"])
     with pytest.raises(CheckpointAlreadyExistsError):
-        reg.register_checkpoint("run_a", 1, Path("/m/dupe.json"), ["new_blob"])
+        reg.register_checkpoint("run_a", 1, Path("/m/dupe.json"), [], new_blob_hashes=["new_blob"])
     row = reg._conn.execute(
         "SELECT COUNT(*) FROM blobs WHERE blob_hash='new_blob'"
     ).fetchone()
@@ -92,23 +117,15 @@ def test_delete_nonexistent_is_noop():
     reg.delete_checkpoint("run_a", 999)
 
 
-def test_delete_removes_refs_but_leaves_blobs():
+def test_delete_leaves_blobs():
     reg = _setup()
-    reg.register_checkpoint("run_a", 1, Path("/m/1.json"), ["exclusive"])
+    reg.register_checkpoint("run_a", 1, Path("/m/1.json"), [], new_blob_hashes=["exclusive"])
     reg.delete_checkpoint("run_a", 1)
-
     assert (
         reg._conn.execute(
             "SELECT COUNT(*) FROM blobs WHERE blob_hash='exclusive'"
         ).fetchone()[0]
         == 1
-    )
-
-    assert (
-        reg._conn.execute(
-            "SELECT COUNT(*) FROM refs WHERE blob_hash='exclusive'"
-        ).fetchone()[0]
-        == 0
     )
 
 
@@ -136,27 +153,35 @@ def test_gc_does_not_sweep_fresh_orphan():
 
 def test_gc_does_not_sweep_live_blob():
     reg = _setup()
-    reg.register_checkpoint(
-        "run_a", 1, Path("/m/1.json"), ["live_blob"], blob_sizes={"live_blob": 256}
-    )
-    reg._conn.execute(
-        "UPDATE blobs SET created_at='2000-01-01 00:00:00' WHERE blob_hash='live_blob'"
-    )
-    reg._conn.commit()
-    report = reg.gc(grace_period_hours=24)
+    with tempfile.TemporaryDirectory() as tmp:
+        manifest_path = Path(tmp) / "run_a" / "step_000001.json"
+        _write_manifest(manifest_path, ["live_blob"])
+        reg.register_checkpoint(
+            "run_a", 1, manifest_path, [], new_blob_hashes=["live_blob"],
+            blob_sizes={"live_blob": 256},
+        )
+        reg._conn.execute(
+            "UPDATE blobs SET created_at='2000-01-01 00:00:00' WHERE blob_hash='live_blob'"
+        )
+        reg._conn.commit()
+        report = reg.gc(grace_period_hours=24)
     assert report.deleted_blobs == 0
 
 
 def test_gc_frees_orphans_after_delete_checkpoint():
     reg = _setup()
-    reg.register_checkpoint(
-        "run_a", 1, Path("/m/1.json"), ["h1"], blob_sizes={"h1": 512}
-    )
-    reg.delete_checkpoint("run_a", 1)
-    reg._conn.execute(
-        "UPDATE blobs SET created_at='2000-01-01 00:00:00' WHERE blob_hash='h1'"
-    )
-    reg._conn.commit()
-    report = reg.gc(grace_period_hours=24)
+    with tempfile.TemporaryDirectory() as tmp:
+        manifest_path = Path(tmp) / "run_a" / "step_000001.json"
+        _write_manifest(manifest_path, ["h1"])
+        reg.register_checkpoint(
+            "run_a", 1, manifest_path, [], new_blob_hashes=["h1"],
+            blob_sizes={"h1": 512},
+        )
+        reg.delete_checkpoint("run_a", 1)
+        reg._conn.execute(
+            "UPDATE blobs SET created_at='2000-01-01 00:00:00' WHERE blob_hash='h1'"
+        )
+        reg._conn.commit()
+        report = reg.gc(grace_period_hours=24)
     assert report.deleted_blobs == 1
     assert "h1" in report.swept_hashes

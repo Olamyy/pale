@@ -5,7 +5,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/Olamyy/pale?style=flat&sort=semver&color=blue)](https://github.com/Olamyy/pale/releases)
 
 
-Pale is a framework-agnostic [CAS]([url](https://en.wikipedia.org/wiki/Content-addressable_storage)) checkpoint storage for machine learning models.
+Pale is a framework-agnostic [CAS](https://en.wikipedia.org/wiki/Content-addressable_storage) checkpoint storage for machine learning models.
 
 ---
 ML frameworks store checkpoints as complete snapshots (i.e. every weight, every parameter is stored every single time you call `.save`). For tree-based models trained, or neural networks fine-tuned from a pretrained base, most of those weights do not change from previous checkpoints. You end up paying full storage cost to write the same bytes repeatedly.

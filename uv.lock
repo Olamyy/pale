@@ -811,10 +811,6 @@ dependencies = [
     { name = "msgspec" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "scikit-learn", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "torch" },
-    { name = "torchvision" },
     { name = "zstandard" },
 ]
 
@@ -836,6 +832,10 @@ dev = [
 sklearn = [
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scikit-learn", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+torch = [
+    { name = "torch" },
+    { name = "torchvision" },
 ]
 xgboost = [
     { name = "xgboost" },
@@ -859,19 +859,18 @@ requires-dist = [
     { name = "pandas", marker = "extra == 'benchmark'", specifier = ">=1.3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
-    { name = "scikit-learn", specifier = ">=1.7.2" },
     { name = "scikit-learn", marker = "extra == 'benchmark'", specifier = ">=1.0" },
     { name = "scikit-learn", marker = "extra == 'sklearn'", specifier = ">=1.0" },
-    { name = "torch", specifier = ">=2.10.0" },
     { name = "torch", marker = "extra == 'benchmark'", specifier = ">=2.0" },
-    { name = "torchvision", specifier = ">=0.25.0" },
+    { name = "torch", marker = "extra == 'torch'", specifier = ">=2.0" },
     { name = "torchvision", marker = "extra == 'benchmark'", specifier = ">=0.15" },
+    { name = "torchvision", marker = "extra == 'torch'", specifier = ">=0.15" },
     { name = "tqdm", marker = "extra == 'benchmark'", specifier = ">=4.60" },
     { name = "xgboost", marker = "extra == 'benchmark'", specifier = ">=1.5" },
     { name = "xgboost", marker = "extra == 'xgboost'", specifier = ">=1.5" },
     { name = "zstandard", specifier = ">=0.21" },
 ]
-provides-extras = ["benchmark", "sklearn", "xgboost", "dev"]
+provides-extras = ["sklearn", "xgboost", "torch", "benchmark", "dev"]
 
 [package.metadata.requires-dev]
 dev = [

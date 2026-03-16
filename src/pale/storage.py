@@ -43,7 +43,7 @@ class StorageEngine:
         self._cas = cas_engine
         self._registry = registry
         self._manifest_dir = manifest_dir
-        self._hash_cache: Dict[str, str] = {}  # tensor name → full_hash
+        self._hash_cache: Dict[str, tuple[str, str]] = {}  # tensor name → (full_hash, dtype_str)
         self._prev_manifest: Optional[CheckpointManifest] = None  # last written manifest
 
     def save(
@@ -98,7 +98,7 @@ class StorageEngine:
                     nm = futs[fut]
                     try:
                         record = fut.result()
-                        self._hash_cache[nm] = record.full_hash
+                        self._hash_cache[nm] = (record.full_hash, str(changed[nm].dtype))
                         records[nm] = record
                     except Exception as exc:
                         errors.append((nm, exc))
@@ -125,17 +125,20 @@ class StorageEngine:
             ) from exc
         self._prev_manifest = manifest
 
+        # All chunk hashes referenced by this checkpoint (needed for GC ref-counting).
         blob_hashes = [ref.hash for rec in records.values() for ref in rec.chunks]
-        blob_sizes = {
-            ref.hash: ref.size for rec in records.values() for ref in rec.chunks
-        }
+        # Only new blobs (from changed tensors) need INSERT into the blobs table.
+        # Unchanged tensors' blobs already exist; passing them to executemany is pure waste.
+        new_blob_hashes = [ref.hash for nm in changed for ref in records[nm].chunks]
+        new_blob_sizes = {ref.hash: ref.size for nm in changed for ref in records[nm].chunks}
         try:
             self._registry.register_checkpoint(
                 run_id=run_id,
                 step=step,
                 manifest_path=manifest_path,
                 blob_hashes=blob_hashes,
-                blob_sizes=blob_sizes,
+                new_blob_hashes=new_blob_hashes,
+                blob_sizes=new_blob_sizes,
                 parent_step=parent_step,
             )
         except CheckpointAlreadyExistsError:
@@ -198,15 +201,22 @@ class StorageEngine:
         prev_record = prev_manifest.tensors.get(name)
         if prev_record is None:
             return False
-        if list(arr.shape) != prev_record.shape or str(arr.dtype) != prev_record.dtype:
-            self._hash_cache.pop(name, None)
-            return False
+        # Fast path: cache hit — hash comparison only, no allocation, no dtype formatting.
+        # If the cached hash matches prev_record, the tensor bytes are identical (shape
+        # and dtype are implicit in the hash). If it doesn't match, fall through to recompute.
         cached = self._hash_cache.get(name)
         if cached is not None:
-            return cached == prev_record.full_hash
+            cached_hash, _ = cached
+            if cached_hash == prev_record.full_hash:
+                return True
+        # Slow path: cache miss or hash changed — validate shape/dtype, then recompute.
+        dtype_str = str(arr.dtype)
+        if list(arr.shape) != prev_record.shape or dtype_str != prev_record.dtype:
+            self._hash_cache.pop(name, None)
+            return False
         raw, _, _ = tensor_to_bytes(arr)
         h = hash_chunk(raw)
-        self._hash_cache[name] = h
+        self._hash_cache[name] = (h, dtype_str)
         return h == prev_record.full_hash
 
     def _get_prev_manifest(

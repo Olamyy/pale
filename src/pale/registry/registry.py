@@ -39,6 +39,7 @@ class Registry:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(db_path), check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA foreign_keys=ON")
         registry = cls(conn)
         registry._create_tables()
@@ -119,6 +120,7 @@ class Registry:
         step: int,
         manifest_path: Path,
         blob_hashes: List[str],
+        new_blob_hashes: Optional[List[str]] = None,
         blob_sizes: Optional[Dict[str, int]] = None,
         parent_step: Optional[int] = None,
     ) -> None:
@@ -136,12 +138,14 @@ class Registry:
             run_id: Identifier for the training run.
             step: Training step / epoch number for this checkpoint.
             manifest_path: Absolute path to the manifest JSON file.
-            blob_hashes: All chunk hashes referenced by this checkpoint.
-            blob_sizes: Optional hash → size_bytes mapping. Blobs with no
-                entry are stored with size_bytes=0 (GC uses size for
-                reporting only — correctness is not affected).
+            blob_hashes: All chunk hashes referenced by this checkpoint (used
+                for ref rows — GC liveness depends on these).
+            new_blob_hashes: Subset of blob_hashes that are newly written this
+                step. Only these are inserted into the blobs table. If None,
+                falls back to blob_hashes (original behavior).
+            blob_sizes: Optional hash → size_bytes mapping for new blobs.
+                Blobs with no entry are stored with size_bytes=0.
             parent_step: Step of the preceding checkpoint, if any.
-                Used for lineage traversal. None for the first checkpoint.
         """
         if self.checkpoint_exists(run_id, step):
             raise CheckpointAlreadyExistsError(
@@ -152,17 +156,19 @@ class Registry:
         now = _now_utc()
         checkpoint_id = str(uuid.uuid4())
         sizes = blob_sizes or {}
+        blobs_to_insert = new_blob_hashes if new_blob_hashes is not None else blob_hashes
 
         with self._conn:
             self._conn.execute(
                 "INSERT OR IGNORE INTO runs (run_id, created_at) VALUES (?, ?)",
                 (run_id, now),
             )
-            self._conn.executemany(
-                "INSERT OR IGNORE INTO blobs (blob_hash, size_bytes, created_at) "
-                "VALUES (?, ?, ?)",
-                [(h, sizes.get(h, 0), now) for h in blob_hashes],
-            )
+            if blobs_to_insert:
+                self._conn.executemany(
+                    "INSERT OR IGNORE INTO blobs (blob_hash, size_bytes, created_at) "
+                    "VALUES (?, ?, ?)",
+                    [(h, sizes.get(h, 0), now) for h in blobs_to_insert],
+                )
             self._conn.execute(
                 "INSERT INTO checkpoints "
                 "(checkpoint_id, run_id, step, parent_step, manifest_path, created_at) "

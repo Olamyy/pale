@@ -1,14 +1,46 @@
 # Pale
 
-Pale is a framework-agnostic content-addressed checkpoint storage for machine learning models.
+[![CI](https://github.com/Olamyy/pale/actions/workflows/ci.yml/badge.svg)](https://github.com/Olamyy/pale/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue)](https://github.com/Olamyy/pale/blob/main/LICENSE)
+[![GitHub Release](https://img.shields.io/github/v/release/Olamyy/pale?style=flat&sort=semver&color=blue)](https://github.com/Olamyy/pale/releases)
+
+
+Pale is a framework-agnostic [CAS]([url](https://en.wikipedia.org/wiki/Content-addressable_storage)) checkpoint storage for machine learning models.
+
+---
+ML frameworks store checkpoints as complete snapshots (i.e. every weight, every parameter is stored every single time you call `.save`). For tree-based models trained, or neural networks fine-tuned from a pretrained base, most of those weights do not change from previous checkpoints. You end up paying full storage cost to write the same bytes repeatedly.
+
+Pale solves this by operating on the tensors instead of the checkpoint files. By extracting individual trees, layers, and weight matrices directly from the model, it identifies what's actually new and skip everything that isn't. 
+For example, a `warm-start` GBM that adds 10 trees per step stores only those 10 trees; the previous 90 are already on disk.
+
+Pale replaces your ``save`` and `load` calls and allows each adapter handle framework specific serialization internally.
 
 ---
 
-Saving a model checkpoint stores the full weights every time. For tree-based models trained with warm-start, or neural networks fine-tuned from a base, most of those weights are identical to the previous checkpoint. Pale stores only what changed.
+## Benchmark results
 
-Most checkpoint tools operate on files. Pale operates on tensors. By extracting individual trees, layers, and weight matrices directly, it can identify what actually changed between checkpoints and skip everything that didn't.
+### Storage savings vs DVC
 
-Pale replaces your checkpoint save and load calls. Each adapter handles framework-specific serialization internally. 
+Measured over 20-step training runs. DVC stores full checkpoints on every save; Pale deduplicates at the tensor level.
+
+| Framework | Scenario | DVC stores | Pale stores | Savings |
+|-----------|----------|------------|-------------|---------|
+| sklearn | 20 warm-start steps | 1.4 MB | 80 KB | **94%** |
+| XGBoost | 20 warm-start steps | 721 KB | 150 KB | **79%** |
+| PyTorch | 20 epochs, frozen backbone | 10.6 MB | 5.4 MB | **49%** |
+
+### Overhead
+
+Measured on Apple Silicon (macOS), Python 3.12. Save uses a cold store per rep; load reuses the same store (warm page cache). Full methodology in [`benchmark/results/`](benchmark/results/).
+
+| Framework | Model | Save | Load | No-op save |
+|-----------|-------|------|------|------------|
+| sklearn | GBM, 50 trees, 4 KB | 38 ms | 9 ms | **1.4 ms** |
+| XGBoost | Booster, 50 rounds, 25 KB | 29 ms | 5 ms | **1.9 ms** |
+| PyTorch | MLP 256×2, 332 KB | 7 ms | 1 ms | **0.5 ms** |
+| PyTorch | MLP 1024×4, 12 MB | 36 ms | 16 ms | — |
+
+The no-op fast path (tensor hash matches previous checkpoint → zero writes) is the dominant case for warm-start and fine-tuning workflows. At 0.5–1.9 ms per step it is effectively free.
 
 ---
 
@@ -80,33 +112,6 @@ print(store.stats())
 | XGBoost | `pale.adapters.xgboost.XGBoostAdapter` | `xgb.Booster` |
 | PyTorch | `pale.adapters.pytorch.PyTorchAdapter` | Any model with a `state_dict()` |
 | Custom | Implement `ModelAdapter` | `extract(model) -> Dict[str, ndarray]` and `reconstruct(tensors, original) -> model` |
-
----
-
-## Benchmark results
-
-### Storage savings vs DVC
-
-Measured over 20-step training runs. DVC stores full checkpoints on every save; Pale deduplicates at the tensor level.
-
-| Framework | Scenario | DVC stores | Pale stores | Savings |
-|-----------|----------|------------|-------------|---------|
-| sklearn | 20 warm-start steps | 1.4 MB | 80 KB | **94%** |
-| XGBoost | 20 warm-start steps | 721 KB | 150 KB | **79%** |
-| PyTorch | 20 epochs, frozen backbone | 10.6 MB | 5.4 MB | **49%** |
-
-### Overhead
-
-Measured on Apple Silicon (macOS), Python 3.12. Save uses a cold store per rep; load reuses the same store (warm page cache). Full methodology in [`benchmark/results/`](benchmark/results/).
-
-| Framework | Model | Save | Load | No-op save |
-|-----------|-------|------|------|------------|
-| sklearn | GBM, 50 trees, 4 KB | 38 ms | 9 ms | **1.4 ms** |
-| XGBoost | Booster, 50 rounds, 25 KB | 29 ms | 5 ms | **1.9 ms** |
-| PyTorch | MLP 256×2, 332 KB | 7 ms | 1 ms | **0.5 ms** |
-| PyTorch | MLP 1024×4, 12 MB | 36 ms | 16 ms | — |
-
-The no-op fast path (tensor hash matches previous checkpoint → zero writes) is the dominant case for warm-start and fine-tuning workflows. At 0.5–1.9 ms per step it is effectively free.
 
 ---
 

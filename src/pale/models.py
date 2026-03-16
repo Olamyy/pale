@@ -22,6 +22,14 @@ class TensorArrayRecord(msgspec.Struct, frozen=True):
         if not self.chunks:
             raise CorruptManifestError(f"TensorArrayRecord '{self.name}' has no chunks")
 
+    def __repr__(self) -> str:
+        shape_str = "x".join(str(d) for d in self.shape)
+        return (
+            f"TensorArrayRecord(name={self.name!r}, dtype={self.dtype}, "
+            f"shape=({shape_str}), chunks={len(self.chunks)}, "
+            f"bytes={self.byte_length:,})"
+        )
+
     def validate_chunk_refs(self) -> None:
         """Assert sum(ref.size) == byte_length. Raises CorruptManifestError if not."""
         total = sum(ref.size for ref in self.chunks)

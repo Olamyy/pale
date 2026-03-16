@@ -79,6 +79,7 @@ class StorageEngine:
             return name, self._cas.store_tensor(name, arr)
 
         records: Dict[str, TensorArrayRecord] = {}
+        errors: list[tuple[str, Exception]] = []
         n_workers = min(len(tensors), 8)
         with ThreadPoolExecutor(max_workers=n_workers) as pool:
             futs = {pool.submit(_store_one, nm, ar): nm for nm, ar in tensors.items()}
@@ -86,12 +87,15 @@ class StorageEngine:
                 nm = futs[fut]
                 try:
                     _, record = fut.result()
+                    records[nm] = record
                 except Exception as exc:
-                    raise StorageError(
-                        f"CAS store failed for tensor '{nm}' "
-                        f"(run={run_id}, step={step}): {exc}"
-                    ) from exc
-                records[nm] = record
+                    errors.append((nm, exc))
+        if errors:
+            detail = "; ".join(f"'{nm}': {exc}" for nm, exc in errors)
+            raise StorageError(
+                f"CAS store failed for {len(errors)} tensor(s) "
+                f"(run={run_id}, step={step}): {detail}"
+            )
 
         manifest_path = self._manifest_path(run_id, step)
         manifest = CheckpointManifest(

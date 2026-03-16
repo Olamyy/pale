@@ -192,7 +192,13 @@ class PaleStore:
         return self
 
     def __exit__(self, *_) -> None:
+        self._shutdown()
+
+    def __del__(self) -> None:
+        self._shutdown()
+
+    def _shutdown(self) -> None:
         try:
-            self._cas.shutdown()
+            self._cas.shutdown(wait=False)
         except Exception as exc:
             warnings.warn(f"CASEngine shutdown failed: {exc}", stacklevel=2)

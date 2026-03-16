@@ -52,3 +52,4 @@ pale_data/
 .idea/
 *.iml
 benchmark/colab_dedup_analysis.py
+manifests/*

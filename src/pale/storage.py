@@ -152,10 +152,6 @@ class StorageEngine:
             for name, record in manifest.tensors.items()
         }
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _manifest_path(self, run_id: str, step: int) -> Path:
         return self._manifest_dir / run_id / f"step_{step:06d}.json"
 

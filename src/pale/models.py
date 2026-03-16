@@ -6,16 +6,16 @@ from pale.errors import CorruptManifestError
 
 
 class ChunkRef(msgspec.Struct, frozen=True):
-    hash: str  # BLAKE3 hex of raw uncompressed chunk bytes
-    size: int  # byte length of this chunk (needed for ragged final chunk)
+    hash: str
+    size: int
 
 
 class TensorArrayRecord(msgspec.Struct, frozen=True):
     name: str
     dtype: str
     shape: List[int]
-    byte_length: int  # sum(ref.size for ref in chunks) must equal this
-    full_hash: str  # BLAKE3 of entire raw tensor bytes — for no-op fast path
+    byte_length: int
+    full_hash: str
     chunks: List[ChunkRef]
 
     def __post_init__(self) -> None:

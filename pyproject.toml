@@ -59,4 +59,7 @@ dev = [
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "ruff>=0.15.6",
+    "torch>=2.10.0",
+    "torchvision>=0.25.0",
+    "xgboost>=3.2.0",
 ]

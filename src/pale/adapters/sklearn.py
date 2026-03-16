@@ -65,10 +65,6 @@ class SklearnAdapter:
 
         return model
 
-    # ------------------------------------------------------------------
-    # GBM helpers
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _iter_trees(model: Any) -> Iterator[Tuple[int, Any]]:
         """Yield (index, tree) for each tree in estimators_.
@@ -89,8 +85,8 @@ class SklearnAdapter:
         for i, tree in self._iter_trees(model):
             t = tree.tree_
             tensors[self._tree_key(i, "features")] = t.feature.copy()
-            tensors[self._tree_key(i, "thresholds")] = t.threshold.copy()  # float64
-            tensors[self._tree_key(i, "values")] = t.value.flatten().copy()  # float64
+            tensors[self._tree_key(i, "thresholds")] = t.threshold.copy()
+            tensors[self._tree_key(i, "values")] = t.value.flatten().copy()
         return tensors
 
     def _reconstruct_gbm(self, tensors: Dict[str, np.ndarray], model: Any) -> None:

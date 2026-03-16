@@ -236,8 +236,8 @@ if __name__ == "__main__":
         measure_scaling(
             "MLP",
             [
-                _pytorch_state_dict(hidden=h, n_layers=l)
-                for h, l in [(64, 2), (256, 2), (512, 4), (1024, 4)]
+                _pytorch_state_dict(hidden=h, n_layers=n)
+                for h, n in [(64, 2), (256, 2), (512, 4), (1024, 4)]
             ],
             ["64×2", "256×2", "512×4", "1024×4"],
             pt_adapter,

@@ -1,6 +1,5 @@
 import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
 
 from pale.registry.registry import Registry
 from pale.registry.schema import create_tables

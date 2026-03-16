@@ -158,7 +158,6 @@ class PaleStore:
         """
         root = Path(root)
         registry = Registry.from_path(root / "registry.db")
-        manifest_dir = root / "manifests"
 
         runs = registry.list_runs()
         total_chunks = 0

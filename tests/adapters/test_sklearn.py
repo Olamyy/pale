@@ -8,10 +8,16 @@ from pale.hashing import hash_chunk
 from pale.serialization import tensor_to_bytes
 
 
-def _trained_gbm(n_estimators: int = 10, n_classes: int = 2) -> GradientBoostingClassifier:
+def _trained_gbm(
+    n_estimators: int = 10, n_classes: int = 2
+) -> GradientBoostingClassifier:
     rng = np.random.default_rng(0)
     X = rng.standard_normal((150, 4))
-    y = (X[:, 0] * n_classes).astype(int).clip(0, n_classes - 1) if n_classes > 2 else (X[:, 0] > 0).astype(int)
+    y = (
+        (X[:, 0] * n_classes).astype(int).clip(0, n_classes - 1)
+        if n_classes > 2
+        else (X[:, 0] > 0).astype(int)
+    )
     model = GradientBoostingClassifier(n_estimators=n_estimators, random_state=0)
     model.fit(X, y)
     return model

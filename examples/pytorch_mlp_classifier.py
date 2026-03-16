@@ -14,7 +14,6 @@ from pale.adapters.pytorch import PyTorchAdapter
 from pale.store import PaleStore
 
 
-
 def _default_run_id() -> str:
     return f"pytorch-mlp-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
@@ -70,7 +69,6 @@ class MLPClassifier(nn.Module):
         return self.network(inputs).squeeze(-1)
 
 
-
 def parse_args() -> ExperimentConfig:
     parser = argparse.ArgumentParser(
         description="Run a checkpointed PyTorch MLP classification experiment with Pale."
@@ -106,7 +104,6 @@ def parse_args() -> ExperimentConfig:
     )
 
 
-
 def validate_config(config: ExperimentConfig) -> None:
     if config.n_informative <= 0 or config.n_informative > config.n_features:
         raise ValueError("n_informative must be between 1 and n_features")
@@ -130,11 +127,9 @@ def validate_config(config: ExperimentConfig) -> None:
         raise ValueError("scheduler milestones must be positive")
 
 
-
 def set_random_seeds(seed: int) -> None:
     np.random.seed(seed)
     torch.manual_seed(seed)
-
 
 
 def prepare_data(config: ExperimentConfig) -> DatasetSplit:
@@ -203,10 +198,8 @@ def prepare_data(config: ExperimentConfig) -> DatasetSplit:
     )
 
 
-
 def build_model(config: ExperimentConfig, input_dim: int) -> MLPClassifier:
     return MLPClassifier(input_dim=input_dim, hidden_dim=config.hidden_dim)
-
 
 
 def train_one_epoch(
@@ -232,12 +225,10 @@ def train_one_epoch(
     return total_loss / total_examples
 
 
-
 def predict_logits(model: nn.Module, features: torch.Tensor) -> torch.Tensor:
     model.eval()
     with torch.no_grad():
         return model(features).detach().cpu()
-
 
 
 def evaluate_accuracy(model: nn.Module, loader: DataLoader) -> float:
@@ -251,7 +242,6 @@ def evaluate_accuracy(model: nn.Module, loader: DataLoader) -> float:
             correct += int((predictions == targets).sum().item())
             total += int(targets.numel())
     return correct / total
-
 
 
 def print_config(config: ExperimentConfig) -> None:
@@ -272,7 +262,6 @@ def print_config(config: ExperimentConfig) -> None:
     print()
 
 
-
 def print_step_table(step_metrics: list[StepMetrics]) -> None:
     print("Checkpoint metrics")
     print("-" * 80)
@@ -288,7 +277,6 @@ def print_step_table(step_metrics: list[StepMetrics]) -> None:
     print()
 
 
-
 def print_storage_summary(stats: dict[str, object]) -> None:
     print("Pale storage summary")
     print("-" * 80)
@@ -298,7 +286,6 @@ def print_storage_summary(stats: dict[str, object]) -> None:
     print(f"dedup_ratio      : {stats['dedup_ratio']}")
     print(f"total_bytes      : {stats['total_bytes']}")
     print()
-
 
 
 def train_experiment(config: ExperimentConfig) -> None:
@@ -318,7 +305,9 @@ def train_experiment(config: ExperimentConfig) -> None:
 
     print_config(config)
 
-    with PaleStore(root=config.store_root, run_id=config.run_id, adapter=PyTorchAdapter()) as store:
+    with PaleStore(
+        root=config.store_root, run_id=config.run_id, adapter=PyTorchAdapter()
+    ) as store:
         for epoch in range(1, config.n_epochs + 1):
             train_loss = train_one_epoch(model, data.train_loader, criterion, optimizer)
             valid_accuracy = evaluate_accuracy(model, data.valid_loader)
@@ -349,7 +338,9 @@ def train_experiment(config: ExperimentConfig) -> None:
         )
         restored.eval()
         restored_logits = predict_logits(restored, data.test_features)
-        restored_predictions = (torch.sigmoid(restored_logits) >= 0.5).to(data.test_targets.dtype)
+        restored_predictions = (torch.sigmoid(restored_logits) >= 0.5).to(
+            data.test_targets.dtype
+        )
         restored_test_accuracy = float(
             (restored_predictions == data.test_targets).float().mean().item()
         )
@@ -378,7 +369,6 @@ def train_experiment(config: ExperimentConfig) -> None:
         print_storage_summary(stats)
 
 
-
 def main() -> None:
     config = parse_args()
     train_experiment(config)
@@ -386,5 +376,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

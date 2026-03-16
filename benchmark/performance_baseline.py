@@ -171,7 +171,6 @@ if __name__ == "__main__":
     print(f"Reps: {args.reps} timed + 1 warmup each. Metric: median ms.")
 
     if "sklearn" in args.frameworks:
-
         print("\n" + "=" * 60)
         print("SKLEARN")
         print("=" * 60)
@@ -195,7 +194,6 @@ if __name__ == "__main__":
         measure_noop("GBM 50 trees", sk_model, sk_adapter, args.reps)
 
     if "xgboost" in args.frameworks:
-
         print("\n" + "=" * 60)
         print("XGBOOST")
         print("=" * 60)
@@ -224,7 +222,6 @@ if __name__ == "__main__":
         )
 
     if "pytorch" in args.frameworks:
-
         print("\n" + "=" * 60)
         print("PYTORCH")
         print("=" * 60)

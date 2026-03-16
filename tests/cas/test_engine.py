@@ -57,4 +57,6 @@ def test_load_out_of_order_chunk_completion():
     for h, data in reversed(list(backend._store.items())):
         reversed_backend._store[h] = data
 
-    assert np.array_equal(arr, CASEngine(reversed_backend, chunk_size).load_tensor(record))
+    assert np.array_equal(
+        arr, CASEngine(reversed_backend, chunk_size).load_tensor(record)
+    )

@@ -209,7 +209,9 @@ def train_experiment(config: ExperimentConfig) -> None:
     print_config(config)
 
     model = build_model(config)
-    with PaleStore(root=config.store_root, run_id=config.run_id, adapter=SklearnAdapter()) as store:
+    with PaleStore(
+        root=config.store_root, run_id=config.run_id, adapter=SklearnAdapter()
+    ) as store:
         for step in range(1, config.n_steps + 1):
             total_trees = step * config.trees_per_step
             model.set_params(**{"n_estimators": total_trees})

@@ -1,6 +1,5 @@
 import os
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List
 
@@ -24,9 +23,8 @@ class FilesystemBackend(CASBackend):
     get  — reads and decompresses; callers always see raw uncompressed bytes
     """
 
-    def __init__(self, root: Path, max_workers: int = 8) -> None:
+    def __init__(self, root: Path) -> None:
         self._root = Path(root)
-        self._max_workers = max_workers
 
     def _chunk_path(self, hash: str) -> Path:
         return self._root / "objects" / hash[:2] / hash[2:4] / (hash[4:] + ".chunk")
@@ -70,16 +68,8 @@ class FilesystemBackend(CASBackend):
             ) from e
 
     def batch_has(self, hashes: List[str]) -> Dict[str, bool]:
-        """Check existence of multiple hashes in parallel."""
-        if not hashes:
-            return {}
-        with ThreadPoolExecutor(
-            max_workers=min(self._max_workers, len(hashes))
-        ) as pool:
-            results = list(
-                pool.map(lambda h: (h, self._chunk_path(h).exists()), hashes)
-            )
-        return dict(results)
+        """Check existence of multiple hashes."""
+        return {h: self._chunk_path(h).exists() for h in hashes}
 
     def delete(self, hash: str) -> None:
         """Delete chunk file. No-op if not present."""

@@ -29,7 +29,9 @@ def test_get_missing_raises_storage_error(tmp_path):
 def test_atomicity_no_partial_on_failure(tmp_path, monkeypatch):
     b = FilesystemBackend(tmp_path)
     h = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
-    monkeypatch.setattr(os, "replace", lambda src, dst: (_ for _ in ()).throw(OSError("fail")))
+    monkeypatch.setattr(
+        os, "replace", lambda src, dst: (_ for _ in ()).throw(OSError("fail"))
+    )
     with pytest.raises(StorageError):
         b.put(h, b"data")
     assert not (tmp_path / "objects" / h[:2] / h[2:4] / (h[4:] + ".chunk")).exists()

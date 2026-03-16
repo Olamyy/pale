@@ -12,12 +12,16 @@ class DictAdapter:
     def extract(self, model: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         return {k: v.copy() for k, v in model.items()}
 
-    def reconstruct(self, tensors: Dict[str, np.ndarray], original: Any) -> Dict[str, np.ndarray]:
+    def reconstruct(
+        self, tensors: Dict[str, np.ndarray], original: Any
+    ) -> Dict[str, np.ndarray]:
         return tensors
 
 
 def _model(seed: int = 0) -> Dict[str, np.ndarray]:
-    return {"weights": np.random.default_rng(seed).standard_normal(64).astype(np.float32)}
+    return {
+        "weights": np.random.default_rng(seed).standard_normal(64).astype(np.float32)
+    }
 
 
 @pytest.fixture()

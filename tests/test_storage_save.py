@@ -6,7 +6,11 @@ import numpy as np
 import pytest
 
 from pale.cas.engine import CASEngine
-from pale.errors import CheckpointAlreadyExistsError, CheckpointNotFoundError, StorageError
+from pale.errors import (
+    CheckpointAlreadyExistsError,
+    CheckpointNotFoundError,
+    StorageError,
+)
 from pale.registry.registry import Registry
 from pale.registry.schema import create_tables
 from pale.storage import StorageEngine
@@ -51,7 +55,9 @@ def test_save_writes_manifest_file(tmp_path):
 
 def test_save_cas_failure_raises_storage_error(tmp_path):
     storage, cas, _, _ = make_engine(tmp_path)
-    with patch.object(cas, "store_tensor", side_effect=RuntimeError("backend unavailable")):
+    with patch.object(
+        cas, "store_tensor", side_effect=RuntimeError("backend unavailable")
+    ):
         with pytest.raises(StorageError, match="CAS store failed"):
             storage.save("run_a", 1, {"w": np.ones(5, dtype=np.float32)})
 

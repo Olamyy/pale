@@ -76,7 +76,9 @@ def test_xgboost_full_round_trip(tmp_path):
     model = _xgboost_model()
     dtest = xgb.DMatrix(_X32)
     preds_before = model.predict(dtest)
-    with PaleStore(root=tmp_path, run_id="r", adapter=XGBoostAdapter(), max_workers=1) as store:
+    with PaleStore(
+        root=tmp_path, run_id="r", adapter=XGBoostAdapter(), max_workers=1
+    ) as store:
         store.save(model, step=1)
         restored = store.load(step=1)
     np.testing.assert_array_equal(preds_before, restored.predict(dtest))
@@ -100,7 +102,9 @@ def test_cross_framework_store_stats(tmp_path):
     with PaleStore(root=tmp_path, run_id="sk", adapter=SklearnAdapter()) as store:
         store.save(_sklearn_model(), step=1)
         store.save(_sklearn_model(), step=2)
-    with PaleStore(root=tmp_path, run_id="xg", adapter=XGBoostAdapter(), max_workers=1) as store:
+    with PaleStore(
+        root=tmp_path, run_id="xg", adapter=XGBoostAdapter(), max_workers=1
+    ) as store:
         store.save(_xgboost_model(), step=1)
     stats = PaleStore.store_stats(tmp_path)
     assert stats["runs"] == 2

@@ -16,7 +16,9 @@ def _setup() -> Registry:
     return Registry(conn)
 
 
-def _insert_blob(reg: Registry, blob_hash: str, size: int = 0, age_hours: int = 0) -> None:
+def _insert_blob(
+    reg: Registry, blob_hash: str, size: int = 0, age_hours: int = 0
+) -> None:
     ts = (datetime.now(timezone.utc) - timedelta(hours=age_hours)).strftime(
         "%Y-%m-%d %H:%M:%S"
     )
@@ -25,6 +27,7 @@ def _insert_blob(reg: Registry, blob_hash: str, size: int = 0, age_hours: int = 
         (blob_hash, size, ts),
     )
     reg._conn.commit()
+
 
 def test_register_creates_run_if_missing():
     reg = _setup()
@@ -76,6 +79,7 @@ def test_register_duplicate_step_no_side_effects():
     ).fetchone()
     assert row[0] == 0
 
+
 def test_delete_removes_checkpoint():
     reg = _setup()
     reg.register_checkpoint("run_a", 1, Path("/m/1.json"), ["h1"])
@@ -93,13 +97,20 @@ def test_delete_removes_refs_but_leaves_blobs():
     reg.register_checkpoint("run_a", 1, Path("/m/1.json"), ["exclusive"])
     reg.delete_checkpoint("run_a", 1)
 
-    assert reg._conn.execute(
-        "SELECT COUNT(*) FROM blobs WHERE blob_hash='exclusive'"
-    ).fetchone()[0] == 1
+    assert (
+        reg._conn.execute(
+            "SELECT COUNT(*) FROM blobs WHERE blob_hash='exclusive'"
+        ).fetchone()[0]
+        == 1
+    )
 
-    assert reg._conn.execute(
-        "SELECT COUNT(*) FROM refs WHERE blob_hash='exclusive'"
-    ).fetchone()[0] == 0
+    assert (
+        reg._conn.execute(
+            "SELECT COUNT(*) FROM refs WHERE blob_hash='exclusive'"
+        ).fetchone()[0]
+        == 0
+    )
+
 
 def test_gc_sweeps_old_orphaned_blob():
     reg = _setup()
@@ -108,9 +119,12 @@ def test_gc_sweeps_old_orphaned_blob():
     assert report.deleted_blobs == 1
     assert report.freed_bytes == 1024
     assert "old_orphan" in report.swept_hashes
-    assert reg._conn.execute(
-        "SELECT COUNT(*) FROM blobs WHERE blob_hash='old_orphan'"
-    ).fetchone()[0] == 0
+    assert (
+        reg._conn.execute(
+            "SELECT COUNT(*) FROM blobs WHERE blob_hash='old_orphan'"
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_gc_does_not_sweep_fresh_orphan():
@@ -135,7 +149,9 @@ def test_gc_does_not_sweep_live_blob():
 
 def test_gc_frees_orphans_after_delete_checkpoint():
     reg = _setup()
-    reg.register_checkpoint("run_a", 1, Path("/m/1.json"), ["h1"], blob_sizes={"h1": 512})
+    reg.register_checkpoint(
+        "run_a", 1, Path("/m/1.json"), ["h1"], blob_sizes={"h1": 512}
+    )
     reg.delete_checkpoint("run_a", 1)
     reg._conn.execute(
         "UPDATE blobs SET created_at='2000-01-01 00:00:00' WHERE blob_hash='h1'"

@@ -216,13 +216,17 @@ def train_experiment(config: ExperimentConfig) -> None:
 
     print_config(config)
 
-    with PaleStore(root=config.store_root, run_id=config.run_id, adapter=SklearnAdapter()) as store:
+    with PaleStore(
+        root=config.store_root, run_id=config.run_id, adapter=SklearnAdapter()
+    ) as store:
         for step in range(1, config.n_steps + 1):
             train_size = training_size_for_step(config, step)
             X_train = data.X_train_pool[:train_size]
             y_train = data.y_train_pool[:train_size]
 
-            model = LogisticRegression(max_iter=config.max_iter, random_state=config.random_state)
+            model = LogisticRegression(
+                max_iter=config.max_iter, random_state=config.random_state
+            )
             model.fit(X_train, y_train)
 
             train_accuracy, valid_accuracy, test_accuracy = evaluate_model(

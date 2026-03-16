@@ -44,6 +44,7 @@ class StorageEngine:
         self._registry = registry
         self._manifest_dir = manifest_dir
         self._hash_cache: Dict[str, str] = {}  # tensor name → full_hash
+        self._prev_manifest: Optional[CheckpointManifest] = None  # last written manifest
 
     def save(
         self,
@@ -72,27 +73,35 @@ class StorageEngine:
 
         Returns the written CheckpointManifest.
         """
-        prev_manifest = self._load_prev_manifest(run_id, step)
+        prev_manifest = self._get_prev_manifest(run_id, step)
 
-        def _store_one(name: str, arr: np.ndarray) -> tuple[str, TensorArrayRecord]:
+        # Serial no-op partition: O(1) dict lookups with cache, no allocation.
+        unchanged: Dict[str, TensorArrayRecord] = {}
+        changed: Dict[str, np.ndarray] = {}
+        for name, arr in tensors.items():
             if self._is_unchanged(name, arr, prev_manifest):
-                return name, prev_manifest.tensors[name]  # type: ignore[index]
-            record = self._cas.store_tensor(name, arr)
-            self._hash_cache[name] = record.full_hash
-            return name, record
+                unchanged[name] = prev_manifest.tensors[name]  # type: ignore[index]
+            else:
+                changed[name] = arr
 
-        records: Dict[str, TensorArrayRecord] = {}
+        # Parallel CAS writes only for tensors that actually changed.
+        records: Dict[str, TensorArrayRecord] = dict(unchanged)
         errors: list[tuple[str, Exception]] = []
-        n_workers = min(len(tensors), 8)
-        with ThreadPoolExecutor(max_workers=n_workers) as pool:
-            futs = {pool.submit(_store_one, nm, ar): nm for nm, ar in tensors.items()}
-            for fut in as_completed(futs):
-                nm = futs[fut]
-                try:
-                    _, record = fut.result()
-                    records[nm] = record
-                except Exception as exc:
-                    errors.append((nm, exc))
+        if changed:
+            n_workers = min(len(changed), 8)
+            with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                futs = {
+                    pool.submit(self._cas.store_tensor, nm, ar): nm
+                    for nm, ar in changed.items()
+                }
+                for fut in as_completed(futs):
+                    nm = futs[fut]
+                    try:
+                        record = fut.result()
+                        self._hash_cache[nm] = record.full_hash
+                        records[nm] = record
+                    except Exception as exc:
+                        errors.append((nm, exc))
         if errors:
             detail = "; ".join(f"'{nm}': {exc}" for nm, exc in errors)
             raise StorageError(
@@ -114,6 +123,7 @@ class StorageEngine:
             raise StorageError(
                 f"Manifest write failed (run={run_id}, step={step}): {exc}"
             ) from exc
+        self._prev_manifest = manifest
 
         blob_hashes = [ref.hash for rec in records.values() for ref in rec.chunks]
         blob_sizes = {
@@ -199,23 +209,35 @@ class StorageEngine:
         self._hash_cache[name] = h
         return h == prev_record.full_hash
 
-    def _load_prev_manifest(
+    def _get_prev_manifest(
         self, run_id: str, step: int
     ) -> Optional[CheckpointManifest]:
-        """Load the manifest for (run_id, step-1) if it exists."""
-        prev_path = self._registry.get_manifest_path(run_id, step - 1)
+        """Return the manifest for (run_id, step-1).
+
+        Uses the in-memory cached manifest when it matches (run_id, step-1) to
+        avoid re-reading and deserializing the JSON on every sequential save.
+        Falls back to disk for the first call or after a gap in steps.
+        """
+        prev_step = step - 1
+        if (
+            self._prev_manifest is not None
+            and self._prev_manifest.run_id == run_id
+            and self._prev_manifest.step == prev_step
+        ):
+            return self._prev_manifest
+        prev_path = self._registry.get_manifest_path(run_id, prev_step)
         if prev_path is None or not prev_path.exists():
             return None
         try:
             return ManifestReader.read(prev_path)
         except CorruptManifestError:
             warnings.warn(
-                f"Previous manifest for run={run_id!r} step={step - 1} is corrupt — "
+                f"Previous manifest for run={run_id!r} step={prev_step} is corrupt — "
                 "no-op fast path disabled for this checkpoint.",
                 stacklevel=3,
             )
             return None
         except Exception as exc:
             raise StorageError(
-                f"Failed to load previous manifest (run={run_id!r}, step={step - 1}): {exc}"
+                f"Failed to load previous manifest (run={run_id!r}, step={prev_step}): {exc}"
             ) from exc

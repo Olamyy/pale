@@ -1,5 +1,6 @@
 import os
 import warnings
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -72,18 +73,25 @@ class StorageEngine:
         """
         prev_manifest = self._load_prev_manifest(run_id, step)
 
-        records: Dict[str, TensorArrayRecord] = {}
-        for name, arr in tensors.items():
+        def _store_one(name: str, arr: np.ndarray) -> tuple[str, TensorArrayRecord]:
             if self._is_unchanged(name, arr, prev_manifest):
-                records[name] = prev_manifest.tensors[name]  # type: ignore[index]
-            else:
+                return name, prev_manifest.tensors[name]  # type: ignore[index]
+            return name, self._cas.store_tensor(name, arr)
+
+        records: Dict[str, TensorArrayRecord] = {}
+        n_workers = min(len(tensors), 8)
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            futs = {pool.submit(_store_one, nm, ar): nm for nm, ar in tensors.items()}
+            for fut in as_completed(futs):
+                nm = futs[fut]
                 try:
-                    records[name] = self._cas.store_tensor(name, arr)
+                    _, record = fut.result()
                 except Exception as exc:
                     raise StorageError(
-                        f"CAS store failed for tensor '{name}' "
+                        f"CAS store failed for tensor '{nm}' "
                         f"(run={run_id}, step={step}): {exc}"
                     ) from exc
+                records[nm] = record
 
         manifest_path = self._manifest_path(run_id, step)
         manifest = CheckpointManifest(
@@ -147,14 +155,16 @@ class StorageEngine:
         manifest = ManifestReader.read(manifest_path)
         ManifestReader.validate(manifest, self._cas.backend)
 
-        return {
-            name: self._cas.load_tensor(record)
-            for name, record in manifest.tensors.items()
-        }
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
+        n_workers = min(len(manifest.tensors), 8)
+        results: Dict[str, np.ndarray] = {}
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            futs = {
+                pool.submit(self._cas.load_tensor, record): name
+                for name, record in manifest.tensors.items()
+            }
+            for fut in as_completed(futs):
+                results[futs[fut]] = fut.result()
+        return results
 
     def _manifest_path(self, run_id: str, step: int) -> Path:
         return self._manifest_dir / run_id / f"step_{step:06d}.json"
@@ -170,6 +180,8 @@ class StorageEngine:
             return False
         prev_record = prev_manifest.tensors.get(name)
         if prev_record is None:
+            return False
+        if list(arr.shape) != prev_record.shape or str(arr.dtype) != prev_record.dtype:
             return False
         raw, _, _ = tensor_to_bytes(arr)
         return hash_chunk(raw) == prev_record.full_hash

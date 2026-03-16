@@ -846,6 +846,9 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "torch" },
+    { name = "torchvision" },
+    { name = "xgboost" },
 ]
 
 [package.metadata]
@@ -875,6 +878,9 @@ dev = [
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "ruff", specifier = ">=0.15.6" },
+    { name = "torch", specifier = ">=2.10.0" },
+    { name = "torchvision", specifier = ">=0.25.0" },
+    { name = "xgboost", specifier = ">=3.2.0" },
 ]
 
 [[package]]

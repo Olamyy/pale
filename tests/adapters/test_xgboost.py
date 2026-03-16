@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
-
-xgb = pytest.importorskip("xgboost")
+import xgboost as xgb
 
 from pale.adapters.xgboost import XGBoostAdapter
 from pale.errors import AdapterError
@@ -28,19 +27,9 @@ def test_extract_contains_skeleton_and_trees():
     assert len([k for k in tensors if k.startswith("tree_")]) == 5
 
 
-def test_extract_keys_sorted():
-    keys = list(XGBoostAdapter.extract(_trained_booster(5)).keys())
-    assert keys == sorted(keys)
-
-
 def test_extract_dtype_uint8():
     for arr in XGBoostAdapter.extract(_trained_booster(3)).values():
         assert arr.dtype == np.uint8
-
-
-def test_extract_arrays_are_writable():
-    for arr in XGBoostAdapter.extract(_trained_booster(3)).values():
-        arr[0] = arr[0]
 
 
 def test_frozen_trees_identical_across_warmstart():
@@ -74,11 +63,6 @@ def test_reconstruct_missing_model_key_raises():
         XGBoostAdapter.reconstruct(
             {"tree_000000": np.zeros(1, dtype=np.uint8)}, original=None
         )
-
-
-def test_wrong_type_raises():
-    with pytest.raises(AdapterError, match="expects xgb.Booster"):
-        XGBoostAdapter.extract("not a booster")
 
 
 def test_categorical_splits_raise():

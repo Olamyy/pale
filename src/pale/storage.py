@@ -43,6 +43,7 @@ class StorageEngine:
         self._cas = cas_engine
         self._registry = registry
         self._manifest_dir = manifest_dir
+        self._hash_cache: Dict[str, str] = {}  # tensor name → full_hash
 
     def save(
         self,
@@ -76,7 +77,9 @@ class StorageEngine:
         def _store_one(name: str, arr: np.ndarray) -> tuple[str, TensorArrayRecord]:
             if self._is_unchanged(name, arr, prev_manifest):
                 return name, prev_manifest.tensors[name]  # type: ignore[index]
-            return name, self._cas.store_tensor(name, arr)
+            record = self._cas.store_tensor(name, arr)
+            self._hash_cache[name] = record.full_hash
+            return name, record
 
         records: Dict[str, TensorArrayRecord] = {}
         errors: list[tuple[str, Exception]] = []
@@ -173,8 +176,8 @@ class StorageEngine:
     def _manifest_path(self, run_id: str, step: int) -> Path:
         return self._manifest_dir / run_id / f"step_{step:06d}.json"
 
-    @staticmethod
     def _is_unchanged(
+        self,
         name: str,
         arr: np.ndarray,
         prev_manifest: Optional[CheckpointManifest],
@@ -186,9 +189,15 @@ class StorageEngine:
         if prev_record is None:
             return False
         if list(arr.shape) != prev_record.shape or str(arr.dtype) != prev_record.dtype:
+            self._hash_cache.pop(name, None)
             return False
+        cached = self._hash_cache.get(name)
+        if cached is not None:
+            return cached == prev_record.full_hash
         raw, _, _ = tensor_to_bytes(arr)
-        return hash_chunk(raw) == prev_record.full_hash
+        h = hash_chunk(raw)
+        self._hash_cache[name] = h
+        return h == prev_record.full_hash
 
     def _load_prev_manifest(
         self, run_id: str, step: int

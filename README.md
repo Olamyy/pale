@@ -5,15 +5,17 @@
 [![GitHub Release](https://img.shields.io/github/v/release/Olamyy/pale?style=flat&sort=semver&color=blue)](https://github.com/Olamyy/pale/releases)
 
 
-Pale is a framework-agnostic [CAS](https://en.wikipedia.org/wiki/Content-addressable_storage) checkpoint storage for machine learning models.
+Pale is a checkpoint storage library for machine learning models that deduplicates at the tensor level rather than the file level.
 
 ---
-ML frameworks store checkpoints as complete snapshots (i.e. every weight, every parameter is stored every single time you call `.save`). For tree-based models trained, or neural networks fine-tuned from a pretrained base, most of those weights do not change from previous checkpoints. You end up paying full storage cost to write the same bytes repeatedly.
 
-Pale solves this by operating on the tensors instead of the checkpoint files. By extracting individual trees, layers, and weight matrices directly from the model, it identifies what's actually new and skip everything that isn't. 
-For example, a `warm-start` GBM that adds 10 trees per step stores only those 10 trees; the previous 90 are already on disk.
+ML frameworks store checkpoints as complete snapshots — every weight, every parameter, every time you call `.save`. For warm-start tree models or fine-tuned neural networks, most of those parameters haven't changed since the last checkpoint. You pay full storage cost to write the same bytes repeatedly.
 
-Pale replaces your ``save`` and `load` calls and allows each adapter handle framework specific serialization internally.
+Pale solves this by operating on tensors instead of files. Each adapter extracts the model's individual components — trees, layers, weight matrices — as named numpy arrays. Pale hashes each array and compares it against the previous checkpoint. Arrays that haven't changed are skipped entirely; only new or updated arrays are written to disk.
+
+For example, a warm-start GBM that adds 10 trees per step writes only those 10 new trees. The previous 90 are already on disk and cost nothing to "save" again.
+
+Pale replaces your `save` and `load` calls. Each adapter handles framework-specific serialization internally.
 
 ---
 
@@ -119,9 +121,9 @@ print(store.stats())
 
 **Run and step.** A run is a training experiment, identified by a string `run_id`. A step is a checkpoint within that run, identified by an integer. Multiple runs can share the same store root — deduplication works across runs.
 
-**Content-addressable storage.** Every tensor is split into fixed-size chunks (default 1 MiB). Each chunk is stored once, keyed by its BLAKE3 hash, under `{root}/objects/`. If two checkpoints — in the same run or different runs — contain identical chunks, only one copy exists on disk. The SQLite registry at `{root}/registry.db` tracks which chunks belong to which checkpoints, and a grace-period GC sweeps orphaned chunks after deletion.
+**Content-addressable storage.** Every tensor is split into fixed-size chunks (default 256 KB) and each chunk is stored once, keyed by its BLAKE3 hash, under `{root}/objects/`. The SQLite registry at `{root}/registry.db` tracks which checkpoints reference which chunks. A grace-period GC sweeps unreferenced chunks after checkpoint deletion.
 
-**No-op fast path.** Before splitting a tensor into chunks, Pale hashes the full tensor and compares it against the previous checkpoint's manifest. If the hash matches, the entire tensor is skipped — no chunking, no dedup check, no CAS writes. This is where most of the savings come from: a warm-start GBM that adds trees each step has all existing trees frozen; only the new trees produce writes.
+**No-op fast path.** Before writing anything, Pale hashes the full tensor and compares it against the previous checkpoint's manifest. If the hash matches, the tensor is skipped entirely — no chunking, no CAS write, no disk I/O. This is the primary source of storage savings: frozen trees, frozen layers, and unchanged weight matrices are identified in memory and never written again. At 0.5–1.9 ms per step for typical models, the no-op path is effectively free.
 
 ---
 

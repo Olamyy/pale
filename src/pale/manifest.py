@@ -6,12 +6,12 @@ from typing import TYPE_CHECKING, Dict
 
 import msgspec
 
-from pale._version import __version__
-from pale.errors import CorruptManifestError
-from pale.models import TensorArrayRecord
+from tensorcas._version import __version__
+from tensorcas.errors import CorruptManifestError
+from tensorcas.models import TensorArrayRecord
 
 if TYPE_CHECKING:
-    from pale.cas.backend import CASBackend
+    from tensorcas.cas.backend import CASBackend
 
 
 class CheckpointManifest(msgspec.Struct, frozen=True):
@@ -21,7 +21,7 @@ class CheckpointManifest(msgspec.Struct, frozen=True):
     created_at: datetime
     tensors: Dict[str, TensorArrayRecord]
     format_version: int = 1
-    pale_version: str = __version__
+    tensorcas_version: str = __version__
 
     def __repr__(self) -> str:
         return (

@@ -1,7 +1,7 @@
 import importlib
 from typing import Any
 
-from pale.errors import AdapterError
+from tensorcas.errors import AdapterError
 
 
 def require(library: str) -> Any:

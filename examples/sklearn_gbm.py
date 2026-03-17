@@ -10,8 +10,8 @@ from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 
-from pale.adapters.sklearn import SklearnAdapter
-from pale.store import PaleStore
+from tensorcas.adapters.sklearn import SklearnAdapter
+from tensorcas.store import tensorcasStore
 
 
 def _default_run_id() -> str:
@@ -56,7 +56,7 @@ class StepMetrics:
 
 def parse_args() -> ExperimentConfig:
     parser = argparse.ArgumentParser(
-        description="Run a checkpointed sklearn GBM experiment with Pale."
+        description="Run a checkpointed sklearn GBM experiment with tensorcas."
     )
     parser.add_argument("--store-root", type=Path, default=Path("."))
     parser.add_argument("--run-id", type=str, default=_default_run_id())
@@ -190,7 +190,7 @@ def print_step_table(step_metrics: list[StepMetrics]) -> None:
 
 
 def print_storage_summary(stats: dict[str, object]) -> None:
-    print("Pale storage summary")
+    print("tensorcas storage summary")
     print("-" * 80)
     print(f"checkpoints      : {stats['checkpoints']}")
     print(f"total_chunks     : {stats['total_chunks']}")
@@ -209,7 +209,7 @@ def train_experiment(config: ExperimentConfig) -> None:
     print_config(config)
 
     model = build_model(config)
-    with PaleStore(
+    with tensorcasStore(
         root=config.store_root, run_id=config.run_id, adapter=SklearnAdapter()
     ) as store:
         for step in range(1, config.n_steps + 1):

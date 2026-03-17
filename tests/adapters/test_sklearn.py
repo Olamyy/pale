@@ -2,10 +2,10 @@ import numpy as np
 import pytest
 from sklearn.ensemble import GradientBoostingClassifier
 
-from pale.adapters.sklearn import SklearnAdapter
-from pale.errors import AdapterError
-from pale.hashing import hash_chunk
-from pale.serialization import tensor_to_bytes
+from tensorcas.adapters.sklearn import SklearnAdapter
+from tensorcas.errors import AdapterError
+from tensorcas.hashing import hash_chunk
+from tensorcas.serialization import tensor_to_bytes
 
 
 def _trained_gbm(

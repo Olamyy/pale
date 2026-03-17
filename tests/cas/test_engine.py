@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from pale.cas.engine import CASEngine
-from pale.errors import CorruptChunkError
+from tensorcas.cas.engine import CASEngine
+from tensorcas.errors import CorruptChunkError
 
 
 class DictBackend:

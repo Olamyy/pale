@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from pale.errors import CheckpointAlreadyExistsError
-from pale.manifest import CheckpointManifest, ManifestWriter
-from pale.models import TensorArrayRecord, ChunkRef
-from pale.registry.registry import Registry
-from pale.registry.schema import create_tables
+from tensorcas.errors import CheckpointAlreadyExistsError
+from tensorcas.manifest import CheckpointManifest, ManifestWriter
+from tensorcas.models import TensorArrayRecord, ChunkRef
+from tensorcas.registry.registry import Registry
+from tensorcas.registry.schema import create_tables
 
 
 def _setup() -> Registry:

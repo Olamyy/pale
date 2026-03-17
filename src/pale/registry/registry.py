@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional
 
-from pale.errors import CheckpointAlreadyExistsError, CorruptManifestError
+from tensorcas.errors import CheckpointAlreadyExistsError, CorruptManifestError
 
 
 class GCReport(NamedTuple):
@@ -204,7 +204,7 @@ class Registry:
         hashes in GCReport.swept_hashes. The caller is responsible for
         deleting the corresponding .chunk files.
         """
-        from pale.manifest import ManifestReader
+        from tensorcas.manifest import ManifestReader
 
         cutoff = (
             datetime.now(timezone.utc) - timedelta(hours=grace_period_hours)

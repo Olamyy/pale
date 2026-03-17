@@ -7,18 +7,18 @@ from typing import Dict, Optional
 
 import numpy as np
 
-from pale.cas.engine import CASEngine
-from pale.errors import (
+from tensorcas.cas.engine import CASEngine
+from tensorcas.errors import (
     CheckpointAlreadyExistsError,
     CheckpointNotFoundError,
     CorruptManifestError,
     StorageError,
 )
-from pale.hashing import hash_chunk
-from pale.manifest import CheckpointManifest, ManifestReader, ManifestWriter
-from pale.models import TensorArrayRecord
-from pale.registry.registry import Registry
-from pale.serialization import tensor_to_bytes
+from tensorcas.hashing import hash_chunk
+from tensorcas.manifest import CheckpointManifest, ManifestReader, ManifestWriter
+from tensorcas.models import TensorArrayRecord
+from tensorcas.registry.registry import Registry
+from tensorcas.serialization import tensor_to_bytes
 
 
 class StorageEngine:

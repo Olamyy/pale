@@ -3,7 +3,7 @@ from typing import Any, Dict, Iterator, Tuple
 
 import numpy as np
 
-from pale.errors import AdapterError
+from tensorcas.errors import AdapterError
 
 
 class SklearnAdapter:

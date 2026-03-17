@@ -8,9 +8,9 @@ from typing import Any, Dict, List, Set
 import numpy as np
 import zstandard as zstd
 
-from pale.hashing import hash_chunk as _hash
-from pale.chunking import chunk_bytes as _chunk
-from pale.serialization import tensor_to_bytes as _tensor_to_bytes
+from tensorcas.hashing import hash_chunk as _hash
+from tensorcas.chunking import chunk_bytes as _chunk
+from tensorcas.serialization import tensor_to_bytes as _tensor_to_bytes
 
 
 CHUNK_SIZE = 256 * 1024  # 256 KB
@@ -173,7 +173,7 @@ def dvc_bytes(files: List[Path]) -> int:
     return sum(seen.values())
 
 
-def pale_bytes(root: Path) -> int:
+def tensorcas_bytes(root: Path) -> int:
     """Sum of all .chunk file sizes under {root}/objects/."""
     return sum(p.stat().st_size for p in (root / "objects").rglob("*.chunk"))
 
@@ -184,28 +184,28 @@ def run_dvc_comparison(
     adapter: Any,
     checkpoint_dir: Path,
 ) -> Dict:
-    """Compare DVC-simulated vs Pale storage for a sequence of model checkpoints."""
-    from pale.store import PaleStore
+    """Compare DVC-simulated vs tensorcas storage for a sequence of model checkpoints."""
+    from tensorcas.store import tensorcasStore
 
     checkpoint_files = sorted(checkpoint_dir.glob("*"))
     dvc = dvc_bytes(checkpoint_files)
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        with PaleStore(root=root, run_id="bench", adapter=adapter) as store:
+        with tensorcasStore(root=root, run_id="bench", adapter=adapter) as store:
             for step, model in enumerate(models, 1):
                 store.save(model, step=step)
-        pale = pale_bytes(root)
+        tensorcas = tensorcas_bytes(root)
 
     raw_total = sum(p.stat().st_size for p in checkpoint_files)
-    savings_vs_dvc = (dvc - pale) / dvc * 100 if dvc else 0.0
+    savings_vs_dvc = (dvc - tensorcas) / dvc * 100 if dvc else 0.0
     return {
         "label": label,
         "checkpoints": len(models),
         "raw_total": raw_total,
         "dvc_bytes": dvc,
-        "pale_bytes": pale,
-        "ratio": pale / dvc if dvc else 0.0,
+        "tensorcas_bytes": tensorcas,
+        "ratio": tensorcas / dvc if dvc else 0.0,
         "savings_vs_dvc": savings_vs_dvc,
     }
 
@@ -251,12 +251,12 @@ def print_crossrun(label: str, stats: Dict) -> None:
 
 
 def print_dvc_comparison(results: List[Dict]) -> None:
-    print(f"\n{'Framework':<12} {'Steps':>6} {'Raw total':>10} {'DVC bytes':>10} {'Pale bytes':>10} {'Ratio':>7} {'vs DVC':>8}")
+    print(f"\n{'Framework':<12} {'Steps':>6} {'Raw total':>10} {'DVC bytes':>10} {'tensorcas bytes':>10} {'Ratio':>7} {'vs DVC':>8}")
     print("=" * 70)
     for r in results:
         print(
             f"{r['label']:<12} {r['checkpoints']:>6} "
             f"{_fmt_bytes(r['raw_total']):>10} {_fmt_bytes(r['dvc_bytes']):>10} "
-            f"{_fmt_bytes(r['pale_bytes']):>10} {r['ratio']:>7.3f} "
+            f"{_fmt_bytes(r['tensorcas_bytes']):>10} {r['ratio']:>7.3f} "
             f"{r['savings_vs_dvc']:>7.1f}%"
         )

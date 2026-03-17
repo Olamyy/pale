@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 import xgboost as xgb
 
-from pale.adapters.xgboost import XGBoostAdapter
-from pale.errors import AdapterError
+from tensorcas.adapters.xgboost import XGBoostAdapter
+from tensorcas.errors import AdapterError
 
 
 def _trained_booster(n_rounds: int = 10) -> xgb.Booster:

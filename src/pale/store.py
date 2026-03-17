@@ -4,17 +4,17 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from pale.adapters.base import ModelAdapter
-from pale.cas.engine import CASEngine
-from pale.cas.filesystem import FilesystemBackend
-from pale.manifest import ManifestReader
-from pale.registry.registry import GCReport, Registry
-from pale.storage import StorageEngine
+from tensorcas.adapters.base import ModelAdapter
+from tensorcas.cas.engine import CASEngine
+from tensorcas.cas.filesystem import FilesystemBackend
+from tensorcas.manifest import ManifestReader
+from tensorcas.registry.registry import GCReport, Registry
+from tensorcas.storage import StorageEngine
 
 _DEFAULT_CHUNK_SIZE = 1_048_576
 
 
-class PaleStore:
+class tensorcasStore:
     """High-level API for checkpoint storage and retrieval.
 
     Wires together FilesystemBackend, CASEngine, Registry, and StorageEngine
@@ -187,7 +187,7 @@ class PaleStore:
             "total_bytes": total_bytes,
         }
 
-    def __enter__(self) -> "PaleStore":
+    def __enter__(self) -> "tensorcasStore":
         return self
 
     def __exit__(self, *_) -> None:

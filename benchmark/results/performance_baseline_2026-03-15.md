@@ -10,10 +10,10 @@ Load reuses the same store (warm page cache, matches real usage).
 
 ## Framing
 
-The question is not "is Pale faster than pickle?" (it never will be).
-The question is "is Pale's overhead acceptable given what it does?"
+The question is not "is tensorcas faster than pickle?" (it never will be).
+The question is "is tensorcas's overhead acceptable given what it does?"
 
-Pale adds on top of raw I/O:
+tensorcas adds on top of raw I/O:
 - BLAKE3 hashing of every tensor (the dominant cost at scale)
 - SQLite registry write (chunk manifest, per checkpoint)
 - CAS lookup — content-addressed dedup check before every write
@@ -48,7 +48,7 @@ linearly with tree count.
 
 **Implication for large GBMs**: A 1000-tree model extrapolates to ~700ms save
 time. Still within the 500ms target on a per-checkpoint basis (users can tune
-checkpoint frequency), but worth communicating: Pale's overhead for sklearn is
+checkpoint frequency), but worth communicating: tensorcas's overhead for sklearn is
 proportional to tree count, not model size on disk.
 
 #### [3] No-op fast path

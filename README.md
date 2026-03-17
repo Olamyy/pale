@@ -5,7 +5,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/Olamyy/pale?style=flat&sort=semver&color=blue)](https://github.com/Olamyy/pale/releases)
 
 
-Pale is a checkpoint storage library for machine learning models that eliminates redundant storage at the tensor level rather than the file level. It uses [content-addressable storage](https://en.wikipedia.org/wiki/Content-addressable_storage) (CAS) as its storage layer.
+Pale is a checkpoint storage library for machine learning models that deduplicates checkpoint data at the tensor level rather than the file level. It uses [content-addressable storage](https://en.wikipedia.org/wiki/Content-addressable_storage) (CAS) as its storage layer.
 
 ---
 

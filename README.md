@@ -125,6 +125,23 @@ print(store.stats())
 
 ---
 
+## Known limitations
+
+**PyTorch: BatchNorm running statistics update in train mode.**
+Freezing layers via `requires_grad_(False)` does not prevent BatchNorm buffers (`running_mean`, `running_var`, `num_batches_tracked`) from updating — they are updated on every forward pass in `model.train()` mode regardless. For ResNet-18 this means 80 of 122 state dict tensors change every epoch even when the entire backbone is frozen, capping the no-op rate at ~48% instead of the theoretical ~99%.
+
+If you want these buffers to stop changing, call `model.eval()` before saving:
+
+```python
+model.eval()
+store.save(model, step=epoch)
+model.train()
+```
+
+This freezes running stats to their current values. The trade-off is that saved checkpoints reflect eval-mode statistics, not the running averages from the most recent training batches.
+
+---
+
 ## CLI
 
 ```bash

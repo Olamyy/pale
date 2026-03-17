@@ -5,7 +5,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/Olamyy/pale?style=flat&sort=semver&color=blue)](https://github.com/Olamyy/pale/releases)
 
 
-Pale is a checkpoint storage library for machine learning models that deduplicates checkpoint data at the tensor level rather than the file level. It uses [content-addressable storage](https://en.wikipedia.org/wiki/Content-addressable_storage) (CAS) as its storage layer.
+Pale is a checkpoint storage library for machine learning models that deduplicates checkpoints at the tensor level. It uses [content-addressable storage](https://en.wikipedia.org/wiki/Content-addressable_storage) as its storage layer.
 
 ---
 
@@ -117,13 +117,46 @@ print(store.stats())
 
 ---
 
-## Core concepts
+## Architecture
 
-**Run and step.** A run is a training experiment, identified by a string `run_id`. A step is a checkpoint within that run, identified by an integer. Multiple runs can share the same store root — deduplication works across runs.
+```
+User / Framework
+      │ model object
+      ▼
+PaleStore                          (store.py)
+  save / load / gc / stats
+      │ Dict[str, ndarray]              │ registry queries
+      ▼                                 ▼
+ModelAdapter                       Registry              (registry/registry.py)
+  extract(model)                     register_checkpoint
+  reconstruct(tensors, original)     list_runs / list_checkpoints
+                                     delete_checkpoint / gc / stats
+      │                              Backed by SQLite (registry.db)
+      ▼
+StorageEngine                      (storage.py)
+  Per-tensor no-op fast path
+  (shape/dtype pre-check → full_hash comparison)
+  Tensors fanned out via ThreadPoolExecutor
+      │ TensorArrayRecord               │ manifest JSON
+      ▼                                 ▼
+CASEngine                          ManifestWriter/Reader  (manifest.py)
+  chunk → hash → batch_has            Atomic write (temp + rename)
+  parallel put / get                  Path: manifests/{run_id}/step_{n:06d}.json
+  (ThreadPoolExecutor)
+      │ bytes
+      ▼
+FilesystemBackend                  (cas/filesystem.py)
+  objects/{h[:2]}/{h[2:4]}/{h[4:]}.chunk
+  zstd compression, atomic writes
+```
 
-**Content-addressable storage.** Every tensor is split into fixed-size chunks (default 256 KB) and each chunk is stored once, keyed by its BLAKE3 hash, under `{root}/objects/`. The SQLite registry at `{root}/registry.db` tracks which checkpoints reference which chunks. A grace-period GC sweeps unreferenced chunks after checkpoint deletion.
+### Core concepts
 
-**No-op fast path.** Before writing anything, Pale hashes the full tensor and compares it against the previous checkpoint's manifest. If the hash matches, the tensor is skipped entirely — no chunking, no CAS write, no disk I/O. This is the primary source of storage savings: frozen trees, frozen layers, and unchanged weight matrices are identified in memory and never written again. At 0.5–1.9 ms per step for typical models, the no-op path is effectively free.
+- **Run and step.** A run is a training experiment, identified by a string `run_id`. A step is a checkpoint within that run, identified by an integer. Multiple runs can share the same store root — deduplication works across runs.
+
+- **Content-addressable storage.** Every tensor is split into fixed-size chunks (default 256 KB) and each chunk is stored once, keyed by its BLAKE3 hash, under `{root}/objects/`. The SQLite registry at `{root}/registry.db` tracks which checkpoints reference which chunks. A grace-period GC sweeps unreferenced chunks after checkpoint deletion.
+
+- **No-op fast path.** Before writing anything, Pale hashes the full tensor and compares it against the previous checkpoint's manifest. If the hash matches, the tensor is skipped entirely — no chunking, no CAS write, no disk I/O. This is the primary source of storage savings: frozen trees, frozen layers, and unchanged weight matrices are identified in memory and never written again. At 0.5–1.9 ms per step for typical models, the no-op path is effectively free.
 
 ---
 
@@ -161,41 +194,6 @@ pale --root ./checkpoints delete --run mlp-run-001 --step 3 --yes
 | `stats` | Dedup statistics: chunk counts, unique chunks, dedup ratio, total bytes. |
 | `gc` | Sweep orphaned blobs older than `--grace` hours (default 24). Prompts unless `--yes`. |
 | `delete` | Delete a single checkpoint. Blob files are cleaned by the next `gc`. Prompts unless `--yes`. |
-
----
-
-## Architecture
-
-```
-User / Framework
-      │ model object
-      ▼
-PaleStore                          (store.py)
-  save / load / gc / stats
-      │ Dict[str, ndarray]              │ registry queries
-      ▼                                 ▼
-ModelAdapter                       Registry              (registry/registry.py)
-  extract(model)                     register_checkpoint
-  reconstruct(tensors, original)     list_runs / list_checkpoints
-                                     delete_checkpoint / gc / stats
-      │                              Backed by SQLite (registry.db)
-      ▼
-StorageEngine                      (storage.py)
-  Per-tensor no-op fast path
-  (shape/dtype pre-check → full_hash comparison)
-  Tensors fanned out via ThreadPoolExecutor
-      │ TensorArrayRecord               │ manifest JSON
-      ▼                                 ▼
-CASEngine                          ManifestWriter/Reader  (manifest.py)
-  chunk → hash → batch_has            Atomic write (temp + rename)
-  parallel put / get                  Path: manifests/{run_id}/step_{n:06d}.json
-  (ThreadPoolExecutor)
-      │ bytes
-      ▼
-FilesystemBackend                  (cas/filesystem.py)
-  objects/{h[:2]}/{h[2:4]}/{h[4:]}.chunk
-  zstd compression, atomic writes
-```
 
 ---
 

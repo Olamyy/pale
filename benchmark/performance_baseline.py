@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from tensorcas.store import tensorcasStore
+from tensorcas.store import TensorCasStore
 from tensorcas.adapters.pytorch import PyTorchAdapter
 from tensorcas.adapters.sklearn import SklearnAdapter
 from tensorcas.adapters.xgboost import XGBoostAdapter
@@ -74,7 +74,7 @@ def _fmt_size(n_bytes: int) -> str:
 def _save_fresh(adapter, model: Any, max_workers: int = 8) -> None:
     """Cold save: fresh store each rep so no-op fast path never fires."""
     with tempfile.TemporaryDirectory(prefix="tensorcas_rep_") as rep_tmp:
-        with tensorcasStore(
+        with TensorCasStore(
             root=Path(rep_tmp), run_id="r", adapter=adapter, max_workers=max_workers
         ) as store:
             store.save(model, step=1)
@@ -90,7 +90,7 @@ def measure_absolute(
     save_verdict = "OK" if save_ms < 500 else "SLOW"
 
     with tempfile.TemporaryDirectory(prefix="tensorcas_load_") as tmp:
-        with tensorcasStore(
+        with TensorCasStore(
             root=Path(tmp), run_id="r", adapter=adapter, max_workers=max_workers
         ) as store:
             store.save(model, step=1)
@@ -137,7 +137,7 @@ def measure_noop(
     print(f"\n  {name}  — no-op fast path (unchanged model saved twice)")
 
     with tempfile.TemporaryDirectory(prefix="tensorcas_noop_") as tmp:
-        with tensorcasStore(
+        with TensorCasStore(
             root=Path(tmp), run_id="r", adapter=adapter, max_workers=max_workers
         ) as store:
             store.save(model, step=1)
@@ -150,7 +150,7 @@ def measure_noop(
     )
 
 
-def _next_step(store: tensorcasStore) -> int:
+def _next_step(store: TensorCasStore) -> int:
     steps = store.list_checkpoints()
     return (max(steps) + 1) if steps else 1
 

@@ -11,7 +11,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 
 from tensorcas.adapters.sklearn import SklearnAdapter
-from tensorcas.store import tensorcasStore
+from tensorcas.store import TensorCasStore
 
 
 def _default_run_id() -> str:
@@ -216,7 +216,7 @@ def train_experiment(config: ExperimentConfig) -> None:
 
     print_config(config)
 
-    with tensorcasStore(
+    with TensorCasStore(
         root=config.store_root, run_id=config.run_id, adapter=SklearnAdapter()
     ) as store:
         for step in range(1, config.n_steps + 1):

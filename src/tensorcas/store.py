@@ -14,7 +14,7 @@ from tensorcas.storage import StorageEngine
 _DEFAULT_CHUNK_SIZE = 1_048_576
 
 
-class tensorcasStore:
+class TensorCasStore:
     """High-level API for checkpoint storage and retrieval.
 
     Wires together FilesystemBackend, CASEngine, Registry, and StorageEngine
@@ -187,7 +187,7 @@ class tensorcasStore:
             "total_bytes": total_bytes,
         }
 
-    def __enter__(self) -> "tensorcasStore":
+    def __enter__(self) -> "TensorCasStore":
         return self
 
     def __exit__(self, *_) -> None:

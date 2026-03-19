@@ -185,14 +185,14 @@ def run_dvc_comparison(
     checkpoint_dir: Path,
 ) -> Dict:
     """Compare DVC-simulated vs tensorcas storage for a sequence of model checkpoints."""
-    from tensorcas.store import tensorcasStore
+    from tensorcas.store import TensorCasStore
 
     checkpoint_files = sorted(checkpoint_dir.glob("*"))
     dvc = dvc_bytes(checkpoint_files)
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        with tensorcasStore(root=root, run_id="bench", adapter=adapter) as store:
+        with TensorCasStore(root=root, run_id="bench", adapter=adapter) as store:
             for step, model in enumerate(models, 1):
                 store.save(model, step=step)
         tensorcas = tensorcas_bytes(root)

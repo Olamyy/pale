@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 from tensorcas.errors import tensorcasError
 from tensorcas.manifest import ManifestReader
-from tensorcas.store import tensorcasStore
+from tensorcas.store import TensorCasStore
 from tensorcas.cas.filesystem import FilesystemBackend
 from tensorcas.registry.registry import Registry
 
@@ -104,7 +104,7 @@ def _cmd_stats(args: argparse.Namespace) -> None:
         if not db.exists():
             _die(f"no tensorcas store at {root} (registry.db not found)")
 
-        _print_stats(tensorcasStore.store_stats(root), fmt)
+        _print_stats(TensorCasStore.store_stats(root), fmt)
     else:
         registry = _open_registry(root)
 

@@ -8,7 +8,7 @@ from tensorcas.adapters.pytorch import PyTorchAdapter
 from tensorcas.adapters.sklearn import SklearnAdapter
 from tensorcas.adapters.xgboost import XGBoostAdapter
 from tensorcas.errors import CorruptChunkError
-from tensorcas.store import tensorcasStore
+from tensorcas.store import TensorCasStore
 
 _RNG = np.random.default_rng(42)
 _X = _RNG.standard_normal((200, 8))
@@ -44,7 +44,7 @@ def _pytorch_model() -> torch.nn.Module:
 def test_sklearn_full_round_trip(tmp_path):
     model = _sklearn_model()
     preds_before = model.predict(_X)
-    with tensorcasStore(root=tmp_path, run_id="r", adapter=SklearnAdapter()) as store:
+    with TensorCasStore(root=tmp_path, run_id="r", adapter=SklearnAdapter()) as store:
         store.save(model, step=1)
         restored = store.load(step=1, original=model)
     np.testing.assert_array_equal(preds_before, restored.predict(_X))
@@ -53,7 +53,7 @@ def test_sklearn_full_round_trip(tmp_path):
 def test_sklearn_warm_start_dedup(tmp_path):
     model = GradientBoostingClassifier(n_estimators=10, warm_start=True, random_state=0)
     model.fit(_X, _Y)
-    with tensorcasStore(root=tmp_path, run_id="r", adapter=SklearnAdapter()) as store:
+    with TensorCasStore(root=tmp_path, run_id="r", adapter=SklearnAdapter()) as store:
         store.save(model, step=1)
         model.set_params(n_estimators=20)
         model.fit(_X, _Y)
@@ -64,7 +64,7 @@ def test_sklearn_warm_start_dedup(tmp_path):
 
 
 def test_corrupt_chunk_detected_on_load(tmp_path):
-    with tensorcasStore(root=tmp_path, run_id="r", adapter=SklearnAdapter()) as store:
+    with TensorCasStore(root=tmp_path, run_id="r", adapter=SklearnAdapter()) as store:
         store.save(_sklearn_model(), step=1)
         chunk = next((tmp_path / "objects").rglob("*.chunk"))
         chunk.write_bytes(b"corrupt")
@@ -76,7 +76,7 @@ def test_xgboost_full_round_trip(tmp_path):
     model = _xgboost_model()
     dtest = xgb.DMatrix(_X32)
     preds_before = model.predict(dtest)
-    with tensorcasStore(
+    with TensorCasStore(
         root=tmp_path, run_id="r", adapter=XGBoostAdapter(), max_workers=1
     ) as store:
         store.save(model, step=1)
@@ -89,7 +89,7 @@ def test_pytorch_full_round_trip(tmp_path):
     x = torch.from_numpy(_X32)
     with torch.no_grad():
         preds_before = model(x).numpy()
-    with tensorcasStore(root=tmp_path, run_id="r", adapter=PyTorchAdapter()) as store:
+    with TensorCasStore(root=tmp_path, run_id="r", adapter=PyTorchAdapter()) as store:
         store.save(model.state_dict(), step=1)
         state = store.load(step=1)
     model.load_state_dict(state)
@@ -99,14 +99,14 @@ def test_pytorch_full_round_trip(tmp_path):
 
 
 def test_cross_framework_store_stats(tmp_path):
-    with tensorcasStore(root=tmp_path, run_id="sk", adapter=SklearnAdapter()) as store:
+    with TensorCasStore(root=tmp_path, run_id="sk", adapter=SklearnAdapter()) as store:
         store.save(_sklearn_model(), step=1)
         store.save(_sklearn_model(), step=2)
-    with tensorcasStore(
+    with TensorCasStore(
         root=tmp_path, run_id="xg", adapter=XGBoostAdapter(), max_workers=1
     ) as store:
         store.save(_xgboost_model(), step=1)
-    stats = tensorcasStore.store_stats(tmp_path)
+    stats = TensorCasStore.store_stats(tmp_path)
     assert stats["runs"] == 2
     assert stats["checkpoints"] == 3
     assert stats["unique_chunks"] < stats["total_chunks"]

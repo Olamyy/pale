@@ -11,7 +11,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from tensorcas.adapters.pytorch import PyTorchAdapter
-from tensorcas.store import tensorcasStore
+from tensorcas.store import TensorCasStore
 
 
 def _default_run_id() -> str:
@@ -305,7 +305,7 @@ def train_experiment(config: ExperimentConfig) -> None:
 
     print_config(config)
 
-    with tensorcasStore(
+    with TensorCasStore(
         root=config.store_root, run_id=config.run_id, adapter=PyTorchAdapter()
     ) as store:
         for epoch in range(1, config.n_epochs + 1):

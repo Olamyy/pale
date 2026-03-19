@@ -9,7 +9,7 @@ from sklearn.datasets import make_regression
 from sklearn.model_selection import train_test_split
 
 from tensorcas.adapters.xgboost import XGBoostAdapter
-from tensorcas.store import tensorcasStore
+from tensorcas.store import TensorCasStore
 
 
 def _default_run_id() -> str:
@@ -196,7 +196,7 @@ def train_experiment(config: ExperimentConfig) -> None:
 
     print_config(config)
 
-    with tensorcasStore(
+    with TensorCasStore(
         root=config.store_root,
         run_id=config.run_id,
         adapter=XGBoostAdapter(),

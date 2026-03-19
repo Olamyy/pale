@@ -78,12 +78,12 @@ uv add "tensorcas[torch]"
 from pathlib import Path
 import torch
 import torch.nn as nn
-from tensorcas.store import tensorcasStore
+from tensorcas.store import TensorCasStore
 from tensorcas.adapters.pytorch import PyTorchAdapter
 
 model = nn.Sequential(nn.Linear(128, 64), nn.ReLU(), nn.Linear(64, 10))
 
-store = tensorcasStore(
+store = TensorCasStore(
     root=Path("./checkpoints"),
     run_id="mlp-run-001",
     adapter=PyTorchAdapter(),
@@ -123,7 +123,7 @@ print(store.stats())
 User / Framework
       │ model object
       ▼
-tensorcasStore                          (store.py)
+TensorCasStore                          (store.py)
   save / load / gc / stats
       │ Dict[str, ndarray]              │ registry queries
       ▼                                 ▼

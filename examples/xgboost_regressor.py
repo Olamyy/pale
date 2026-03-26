@@ -8,8 +8,8 @@ import xgboost as xgb
 from sklearn.datasets import make_regression
 from sklearn.model_selection import train_test_split
 
-from pale.adapters.xgboost import XGBoostAdapter
-from pale.store import PaleStore
+from tensorcas.adapters.xgboost import XGBoostAdapter
+from tensorcas.store import TensorCasStore
 
 
 def _default_run_id() -> str:
@@ -53,7 +53,7 @@ class StepMetrics:
 
 def parse_args() -> ExperimentConfig:
     parser = argparse.ArgumentParser(
-        description="Run a checkpointed XGBoost regression experiment with Pale."
+        description="Run a checkpointed XGBoost regression experiment with tensorcas."
     )
     parser.add_argument("--store-root", type=Path, default=Path("."))
     parser.add_argument("--run-id", type=str, default=_default_run_id())
@@ -178,7 +178,7 @@ def print_step_table(step_metrics: list[StepMetrics]) -> None:
 
 
 def print_storage_summary(stats: dict[str, object]) -> None:
-    print("Pale storage summary")
+    print("tensorcas storage summary")
     print("-" * 80)
     print(f"checkpoints      : {stats['checkpoints']}")
     print(f"total_chunks     : {stats['total_chunks']}")
@@ -196,7 +196,7 @@ def train_experiment(config: ExperimentConfig) -> None:
 
     print_config(config)
 
-    with PaleStore(
+    with TensorCasStore(
         root=config.store_root,
         run_id=config.run_id,
         adapter=XGBoostAdapter(),

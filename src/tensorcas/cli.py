@@ -4,11 +4,11 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from pale.errors import PaleError
-from pale.manifest import ManifestReader
-from pale.store import PaleStore
-from pale.cas.filesystem import FilesystemBackend
-from pale.registry.registry import Registry
+from tensorcas.errors import tensorcasError
+from tensorcas.manifest import ManifestReader
+from tensorcas.store import TensorCasStore
+from tensorcas.cas.filesystem import FilesystemBackend
+from tensorcas.registry.registry import Registry
 
 
 def _fmt_bytes(n: int) -> str:
@@ -20,7 +20,7 @@ def _fmt_bytes(n: int) -> str:
 
 
 def _die(msg: str) -> None:
-    print(f"pale: error: {msg}", file=sys.stderr)
+    print(f"tensorcas: error: {msg}", file=sys.stderr)
     sys.exit(1)
 
 
@@ -36,7 +36,7 @@ def _open_registry(root: Path):
 
     db = root / "registry.db"
     if not db.exists():
-        _die(f"no pale store at {root} (registry.db not found)")
+        _die(f"no tensorcas store at {root} (registry.db not found)")
     return Registry.from_path(db)
 
 
@@ -102,9 +102,9 @@ def _cmd_stats(args: argparse.Namespace) -> None:
     if run_id is None:
         db = root / "registry.db"
         if not db.exists():
-            _die(f"no pale store at {root} (registry.db not found)")
+            _die(f"no tensorcas store at {root} (registry.db not found)")
 
-        _print_stats(PaleStore.store_stats(root), fmt)
+        _print_stats(TensorCasStore.store_stats(root), fmt)
     else:
         registry = _open_registry(root)
 
@@ -177,15 +177,15 @@ def _cmd_delete(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="pale",
-        description="Inspect and manage a Pale checkpoint store.",
+        prog="tensorcas",
+        description="Inspect and manage a tensorcas checkpoint store.",
     )
     parser.add_argument(
         "--root",
         type=Path,
         default=Path("."),
         metavar="ROOT",
-        help="Root directory of the pale store (default: current directory)",
+        help="Root directory of the tensorcas store (default: current directory)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -227,5 +227,5 @@ def main() -> None:
             _cmd_gc(args)
         elif args.command == "delete":
             _cmd_delete(args)
-    except PaleError as exc:
+    except tensorcasError as exc:
         _die(str(exc))

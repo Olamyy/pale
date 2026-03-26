@@ -5,15 +5,15 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from pale.cas.engine import CASEngine
-from pale.errors import (
+from tensorcas.cas.engine import CASEngine
+from tensorcas.errors import (
     CheckpointAlreadyExistsError,
     CheckpointNotFoundError,
     StorageError,
 )
-from pale.registry.registry import Registry
-from pale.registry.schema import create_tables
-from pale.storage import StorageEngine
+from tensorcas.registry.registry import Registry
+from tensorcas.registry.schema import create_tables
+from tensorcas.storage import StorageEngine
 
 
 class DictBackend:

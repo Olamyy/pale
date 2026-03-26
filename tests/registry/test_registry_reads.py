@@ -1,8 +1,8 @@
 import sqlite3
 from datetime import datetime, timezone
 
-from pale.registry.registry import Registry
-from pale.registry.schema import create_tables
+from tensorcas.registry.registry import Registry
+from tensorcas.registry.schema import create_tables
 
 
 def _setup() -> Registry:

@@ -2,8 +2,8 @@ import os
 
 import pytest
 
-from pale.cas.filesystem import FilesystemBackend
-from pale.errors import StorageError
+from tensorcas.cas.filesystem import FilesystemBackend
+from tensorcas.errors import StorageError
 
 
 def test_put_is_idempotent(tmp_path):

@@ -1,4 +1,4 @@
-Pale Dedup Analysis — Three Separate Measurements
+tensorcas Dedup Analysis — Three Separate Measurements
 Run date: 2026-03-15
 
 This corrects dedup_comparison_2026-03-15.txt, which conflated three distinct
@@ -36,7 +36,7 @@ Why DVC stores all 20 files: every checkpoint file is larger than the previous
 (growing tree count), so no two .ubj files are byte-identical. DVC compresses
 each in full.
 
-Why Pale is 79.2% smaller: it stores each frozen tree exactly once (at step
+Why tensorcas is 79.2% smaller: it stores each frozen tree exactly once (at step
 of creation), then reuses the stored ChunkRef via the no-op fast path. DVC
 stores the entire growing file each time, paying O(n²/2) for frozen content.
 
@@ -67,14 +67,14 @@ Exact PyTorch savings accounting:
     20 unique versions (all epochs differ)
     Compressed sizes: 6.weight=9.2KB, 6.bias≈0KB
 
-  Pale total = (58.3+236+236+1+1+1)×10 + (9.2+0.05)×20 = 5,330KB + 186KB = 5,516KB
-  Actual Pale: 5,517.5KB ✓
+  tensorcas total = (58.3+236+236+1+1+1)×10 + (9.2+0.05)×20 = 5,330KB + 186KB = 5,516KB
+  Actual tensorcas: 5,517.5KB ✓
 
 Why 49.4% savings vs DVC despite only 39.5% no-op rate:
   DVC stores 20 full .pt files × ~545KB compressed = 10,895KB
   Each .pt file contains all 8 tensors + pickle overhead (~3.6KB)
   For epochs 11-20, DVC pays the full 545KB even though only layer 6 changed
-  Pale pays only for layer 6's 10 versions × ~9.2KB each
+  tensorcas pays only for layer 6's 10 versions × ~9.2KB each
 
   The gap between 39.5% no-op rate and 49.4% storage savings is explained by
   backbone tensors being much larger than head tensors: freezing 6 large tensors
@@ -150,9 +150,9 @@ When genuine cross-run dedup would be non-zero:
 CORRECTED INTERPRETATION
 =======================================================================
 
-What Pale actually does well:
+What tensorcas actually does well:
   Model-aware tensor identity: by extracting per-tree or per-layer tensors,
-  Pale skips CAS writes entirely for frozen structure. This is the source of
+  tensorcas skips CAS writes entirely for frozen structure. This is the source of
   the 79–94% storage savings vs DVC and the 49.4% savings for fine-tuning.
 
   The mechanism is model-specific:
@@ -174,7 +174,7 @@ Note on XGBoost mechanism vs sklearn mechanism:
     stored as JSON bytes that happen to be identical because warm-start does
     not re-train old boosting rounds. The savings come from avoiding redundant
     re-storage of the growing model file (DVC stores the whole growing .ubj
-    each time; Pale stores each tree once at creation). The mechanism is the
+    each time; tensorcas stores each tree once at creation). The mechanism is the
     same (per-tree identity via no-op fast path) but the underlying reason is
     different (serialization identity from warm-start, not structural freezing).
 
@@ -186,7 +186,7 @@ Note on XGBoost mechanism vs sklearn mechanism:
     which asserts byte-identical tree tensors across a warm-start step and will
     break if the serialization assumption ever fails.
 
-What Pale does NOT yet demonstrate:
+What tensorcas does NOT yet demonstrate:
   1. Sub-tensor chunk-level dedup. The CAS chunking layer is implemented
      correctly but produces zero additional savings beyond tensor identity at
      these model sizes. For chunk-level dedup to add value, tensors must be
@@ -200,7 +200,7 @@ What Pale does NOT yet demonstrate:
      all runs. This requires large pre-trained models to demonstrate.
 
 Corrected and complete value proposition:
-  PROVEN: Pale stores 79–94% less than DVC for warm-start tree model sequences
+  PROVEN: tensorcas stores 79–94% less than DVC for warm-start tree model sequences
     (sklearn, XGBoost) and 49% less for fine-tuning with explicit layer freezing
     (PyTorch). The mechanism is model-aware tensor identity: the adapter layer
     exposes frozen sub-structures (individual trees, individual layers) that
@@ -223,10 +223,10 @@ Corrected and complete value proposition:
 BENCHMARK FILES
 =======================================================================
 Script:      benchmark/dedup_analysis.py    (three-part analysis)
-Script:      benchmark/dedup_comparison.py  (DVC bytes vs Pale bytes)
+Script:      benchmark/dedup_comparison.py  (DVC bytes vs tensorcas bytes)
 Checkpoints: benchmark/data/checkpoints/sklearn/   (20 × warm-start pkl)
              benchmark/data/checkpoints/xgboost/   (20 × warm-start ubj)
              benchmark/data/checkpoints/pytorch/   (20 × fine-tune pt)
-Adapters:    src/pale/adapters/sklearn.py   (per-tree arrays)
-             src/pale/adapters/xgboost.py   (__skeleton__ + tree_NNNNNN JSON)
-             src/pale/adapters/pytorch.py   (state_dict keys → numpy arrays)
+Adapters:    src/tensorcas/adapters/sklearn.py   (per-tree arrays)
+             src/tensorcas/adapters/xgboost.py   (__skeleton__ + tree_NNNNNN JSON)
+             src/tensorcas/adapters/pytorch.py   (state_dict keys → numpy arrays)

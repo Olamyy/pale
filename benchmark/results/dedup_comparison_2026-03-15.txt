@@ -1,4 +1,4 @@
-Pale vs DVC Dedup Benchmark
+tensorcas vs DVC Dedup Benchmark
 Run date: 2026-03-15
 Host: macOS Darwin 25.3.0
 
@@ -8,12 +8,12 @@ DVC-simulated bytes: each unique checkpoint file compressed with zstd level 3,
   stored once (file-level dedup). Identical files share one entry; changed files
   stored in full.
 
-Pale bytes: actual compressed .chunk file sizes in the CAS objects directory
+tensorcas bytes: actual compressed .chunk file sizes in the CAS objects directory
   after saving all checkpoints into a single store (tensor-level dedup).
 
 Both sides use zstd level 3. The only variable is dedup granularity:
   DVC  — deduplicates at file level (whole checkpoint = one hash)
-  Pale — deduplicates at chunk level (per tensor or per tree = many hashes)
+  tensorcas — deduplicates at chunk level (per tensor or per tree = many hashes)
 
 Cross-run: a second independent run over the same checkpoints shares the CAS
   store. bytes_run2_additional = 0 means the second run wrote zero new bytes.
@@ -33,32 +33,32 @@ sklearn
   Checkpoints : 20
   Raw total   : 4.6MB
   DVC bytes   : 1.4MB
-  Pale 256KB  : 80.1KB  (ratio=0.057, +94.3% vs DVC)
-  Pale 1MB    : 80.1KB  (ratio=0.057, +94.3% vs DVC)
-  Pale 4MB    : 80.1KB  (ratio=0.057, +94.3% vs DVC)
+  tensorcas 256KB  : 80.1KB  (ratio=0.057, +94.3% vs DVC)
+  tensorcas 1MB    : 80.1KB  (ratio=0.057, +94.3% vs DVC)
+  tensorcas 4MB    : 80.1KB  (ratio=0.057, +94.3% vs DVC)
   Cross-run   : 0.0B additional (+100.0% savings)
 
 xgboost
   Checkpoints : 20
   Raw total   : 2.8MB
   DVC bytes   : 721.1KB
-  Pale 256KB  : 150.1KB (ratio=0.208, +79.2% vs DVC)
-  Pale 1MB    : 150.1KB (ratio=0.208, +79.2% vs DVC)
-  Pale 4MB    : 150.1KB (ratio=0.208, +79.2% vs DVC)
+  tensorcas 256KB  : 150.1KB (ratio=0.208, +79.2% vs DVC)
+  tensorcas 1MB    : 150.1KB (ratio=0.208, +79.2% vs DVC)
+  tensorcas 4MB    : 150.1KB (ratio=0.208, +79.2% vs DVC)
   Cross-run   : 0.0B additional (+100.0% savings)
 
 pytorch
   Checkpoints : 20
   Raw total   : 11.6MB
   DVC bytes   : 10.6MB
-  Pale 256KB  : 5.4MB   (ratio=0.506, +49.4% vs DVC)
-  Pale 1MB    : 5.4MB   (ratio=0.506, +49.4% vs DVC)
-  Pale 4MB    : 5.4MB   (ratio=0.506, +49.4% vs DVC)
+  tensorcas 256KB  : 5.4MB   (ratio=0.506, +49.4% vs DVC)
+  tensorcas 1MB    : 5.4MB   (ratio=0.506, +49.4% vs DVC)
+  tensorcas 4MB    : 5.4MB   (ratio=0.506, +49.4% vs DVC)
   Cross-run   : 0.0B additional (+100.0% savings)
 
 Summary table
 -------------
-Framework    Chunk  DVC        Pale       Ratio   vs DVC    Cross-run 2nd  Cross savings
+Framework    Chunk  DVC        tensorcas       Ratio   vs DVC    Cross-run 2nd  Cross savings
 ===================================================================================
 sklearn      256KB  1.4MB      80.1KB     0.057    +94.3%   0.0B           +100.0%
 sklearn      1MB    1.4MB      80.1KB     0.057    +94.3%   0.0B           +100.0%
@@ -95,6 +95,6 @@ Key observations
 
 Adapter implementations
 -----------------------
-sklearn  → src/pale/adapters/sklearn.py  (per-tree arrays: features/thresholds/values)
-xgboost  → src/pale/adapters/xgboost.py  (__skeleton__ + tree_NNNNNN JSON bytes)
-pytorch  → src/pale/adapters/pytorch.py  (state_dict keys → contiguous numpy arrays)
+sklearn  → src/tensorcas/adapters/sklearn.py  (per-tree arrays: features/thresholds/values)
+xgboost  → src/tensorcas/adapters/xgboost.py  (__skeleton__ + tree_NNNNNN JSON bytes)
+pytorch  → src/tensorcas/adapters/pytorch.py  (state_dict keys → contiguous numpy arrays)

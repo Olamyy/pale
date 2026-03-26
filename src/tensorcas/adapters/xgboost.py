@@ -1,12 +1,12 @@
 import json
 import tempfile
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import numpy as np
 
-from pale.adapters.deps import require
-from pale.errors import AdapterError
+from tensorcas.adapters.deps import require
+from tensorcas.errors import AdapterError
 
 
 class XGBoostAdapter:
@@ -26,10 +26,18 @@ class XGBoostAdapter:
 
     Reconstruction: trees are reinserted into the skeleton JSON and the
     booster is loaded via load_model() from the reassembled JSON file.
+
+    Performance: extract() uses save_raw('json') to avoid a temp-file
+    round-trip, and caches per-tree JSON bytes by index so only newly added
+    trees are serialized on each call.
     """
 
-    @staticmethod
-    def extract(model: Any) -> Dict[str, np.ndarray]:
+    def __init__(self) -> None:
+        # Cache of tree index → serialized JSON bytes. Populated on each
+        # extract() call; existing entries are never re-serialized.
+        self._tree_cache: List[bytes] = []
+
+    def extract(self, model: Any) -> Dict[str, np.ndarray]:
         """Extract skeleton + per-tree tensors from a trained Booster."""
         xgb = require("xgboost")
 
@@ -39,7 +47,8 @@ class XGBoostAdapter:
             )
 
         try:
-            model_json = XGBoostAdapter._save_as_json(model)
+            raw = bytes(model.save_raw("json"))
+            model_json = json.loads(raw)
         except Exception as e:
             raise AdapterError(f"Failed to serialize booster to JSON: {e}") from e
 
@@ -55,14 +64,15 @@ class XGBoostAdapter:
 
         skeleton_bytes = json.dumps(model_json).encode()
 
+        # Extend cache for any newly added trees; existing entries are reused.
+        for i in range(len(self._tree_cache), len(trees)):
+            self._tree_cache.append(json.dumps(trees[i]).encode())
+
         tensors: Dict[str, np.ndarray] = {
             "__skeleton__": np.frombuffer(skeleton_bytes, dtype=np.uint8).copy()
         }
-        for i, tree in enumerate(trees):
-            key = f"tree_{i:06d}"
-            tensors[key] = np.frombuffer(
-                json.dumps(tree).encode(), dtype=np.uint8
-            ).copy()
+        for i, tree_bytes in enumerate(self._tree_cache):
+            tensors[f"tree_{i:06d}"] = np.frombuffer(tree_bytes, dtype=np.uint8).copy()
 
         return dict(sorted(tensors.items()))
 
@@ -96,14 +106,3 @@ class XGBoostAdapter:
             tmp_path.unlink(missing_ok=True)
 
         return booster
-
-    @staticmethod
-    def _save_as_json(model: Any) -> dict:
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
-            tmp_path = Path(f.name)
-            model.save_model(str(tmp_path))
-        try:
-            with open(tmp_path) as f:
-                return json.load(f)
-        finally:
-            tmp_path.unlink(missing_ok=True)

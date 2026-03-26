@@ -14,7 +14,7 @@ build-backend = "setuptools.build_meta"
 # python-source = "src"
 
 [project]
-name = "pale"
+name = "tensorcas"
 version = "0.1.0"
 description = "Framework-agnostic checkpoint deduplication and delta storage engine"
 requires-python = ">=3.10"
@@ -23,6 +23,8 @@ dependencies = [
     "zstandard>=0.21",
     "msgspec>=0.18",
     "numpy>=1.20",
+    "ipykernel>=7.2.0",
+    "dvc>=3.67.0",
 ]
 
 [project.optional-dependencies]
@@ -50,7 +52,7 @@ dev = [
 ]
 
 [project.scripts]
-pale = "pale.cli:main"
+tensorcas = "tensorcas.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

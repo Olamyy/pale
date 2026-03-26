@@ -7,18 +7,18 @@ from typing import Dict, Optional
 
 import numpy as np
 
-from pale.cas.engine import CASEngine
-from pale.errors import (
+from tensorcas.cas.engine import CASEngine
+from tensorcas.errors import (
     CheckpointAlreadyExistsError,
     CheckpointNotFoundError,
     CorruptManifestError,
     StorageError,
 )
-from pale.hashing import hash_chunk
-from pale.manifest import CheckpointManifest, ManifestReader, ManifestWriter
-from pale.models import TensorArrayRecord
-from pale.registry.registry import Registry
-from pale.serialization import tensor_to_bytes
+from tensorcas.hashing import hash_chunk
+from tensorcas.manifest import CheckpointManifest, ManifestReader, ManifestWriter
+from tensorcas.models import TensorArrayRecord
+from tensorcas.registry.registry import Registry
+from tensorcas.serialization import tensor_to_bytes
 
 
 class StorageEngine:
@@ -43,6 +43,8 @@ class StorageEngine:
         self._cas = cas_engine
         self._registry = registry
         self._manifest_dir = manifest_dir
+        self._hash_cache: Dict[str, tuple[str, str]] = {}  # tensor name → (full_hash, dtype_str)
+        self._prev_manifest: Optional[CheckpointManifest] = None  # last written manifest
 
     def save(
         self,
@@ -71,25 +73,35 @@ class StorageEngine:
 
         Returns the written CheckpointManifest.
         """
-        prev_manifest = self._load_prev_manifest(run_id, step)
+        prev_manifest = self._get_prev_manifest(run_id, step)
 
-        def _store_one(name: str, arr: np.ndarray) -> tuple[str, TensorArrayRecord]:
+        # Serial no-op partition: O(1) dict lookups with cache, no allocation.
+        unchanged: Dict[str, TensorArrayRecord] = {}
+        changed: Dict[str, np.ndarray] = {}
+        for name, arr in tensors.items():
             if self._is_unchanged(name, arr, prev_manifest):
-                return name, prev_manifest.tensors[name]  # type: ignore[index]
-            return name, self._cas.store_tensor(name, arr)
+                unchanged[name] = prev_manifest.tensors[name]  # type: ignore[index]
+            else:
+                changed[name] = arr
 
-        records: Dict[str, TensorArrayRecord] = {}
+        # Parallel CAS writes only for tensors that actually changed.
+        records: Dict[str, TensorArrayRecord] = dict(unchanged)
         errors: list[tuple[str, Exception]] = []
-        n_workers = min(len(tensors), 8)
-        with ThreadPoolExecutor(max_workers=n_workers) as pool:
-            futs = {pool.submit(_store_one, nm, ar): nm for nm, ar in tensors.items()}
-            for fut in as_completed(futs):
-                nm = futs[fut]
-                try:
-                    _, record = fut.result()
-                    records[nm] = record
-                except Exception as exc:
-                    errors.append((nm, exc))
+        if changed:
+            n_workers = min(len(changed), 8)
+            with ThreadPoolExecutor(max_workers=n_workers) as pool:
+                futs = {
+                    pool.submit(self._cas.store_tensor, nm, ar): nm
+                    for nm, ar in changed.items()
+                }
+                for fut in as_completed(futs):
+                    nm = futs[fut]
+                    try:
+                        record = fut.result()
+                        self._hash_cache[nm] = (record.full_hash, str(changed[nm].dtype))
+                        records[nm] = record
+                    except Exception as exc:
+                        errors.append((nm, exc))
         if errors:
             detail = "; ".join(f"'{nm}': {exc}" for nm, exc in errors)
             raise StorageError(
@@ -111,18 +123,22 @@ class StorageEngine:
             raise StorageError(
                 f"Manifest write failed (run={run_id}, step={step}): {exc}"
             ) from exc
+        self._prev_manifest = manifest
 
+        # All chunk hashes referenced by this checkpoint (needed for GC ref-counting).
         blob_hashes = [ref.hash for rec in records.values() for ref in rec.chunks]
-        blob_sizes = {
-            ref.hash: ref.size for rec in records.values() for ref in rec.chunks
-        }
+        # Only new blobs (from changed tensors) need INSERT into the blobs table.
+        # Unchanged tensors' blobs already exist; passing them to executemany is pure waste.
+        new_blob_hashes = [ref.hash for nm in changed for ref in records[nm].chunks]
+        new_blob_sizes = {ref.hash: ref.size for nm in changed for ref in records[nm].chunks}
         try:
             self._registry.register_checkpoint(
                 run_id=run_id,
                 step=step,
                 manifest_path=manifest_path,
                 blob_hashes=blob_hashes,
-                blob_sizes=blob_sizes,
+                new_blob_hashes=new_blob_hashes,
+                blob_sizes=new_blob_sizes,
                 parent_step=parent_step,
             )
         except CheckpointAlreadyExistsError:
@@ -173,8 +189,8 @@ class StorageEngine:
     def _manifest_path(self, run_id: str, step: int) -> Path:
         return self._manifest_dir / run_id / f"step_{step:06d}.json"
 
-    @staticmethod
     def _is_unchanged(
+        self,
         name: str,
         arr: np.ndarray,
         prev_manifest: Optional[CheckpointManifest],
@@ -185,28 +201,53 @@ class StorageEngine:
         prev_record = prev_manifest.tensors.get(name)
         if prev_record is None:
             return False
-        if list(arr.shape) != prev_record.shape or str(arr.dtype) != prev_record.dtype:
+        # Fast path: cache hit — hash comparison only, no allocation, no dtype formatting.
+        # If the cached hash matches prev_record, the tensor bytes are identical (shape
+        # and dtype are implicit in the hash). If it doesn't match, fall through to recompute.
+        cached = self._hash_cache.get(name)
+        if cached is not None:
+            cached_hash, _ = cached
+            if cached_hash == prev_record.full_hash:
+                return True
+        # Slow path: cache miss or hash changed — validate shape/dtype, then recompute.
+        dtype_str = str(arr.dtype)
+        if list(arr.shape) != prev_record.shape or dtype_str != prev_record.dtype:
+            self._hash_cache.pop(name, None)
             return False
         raw, _, _ = tensor_to_bytes(arr)
-        return hash_chunk(raw) == prev_record.full_hash
+        h = hash_chunk(raw)
+        self._hash_cache[name] = (h, dtype_str)
+        return h == prev_record.full_hash
 
-    def _load_prev_manifest(
+    def _get_prev_manifest(
         self, run_id: str, step: int
     ) -> Optional[CheckpointManifest]:
-        """Load the manifest for (run_id, step-1) if it exists."""
-        prev_path = self._registry.get_manifest_path(run_id, step - 1)
+        """Return the manifest for (run_id, step-1).
+
+        Uses the in-memory cached manifest when it matches (run_id, step-1) to
+        avoid re-reading and deserializing the JSON on every sequential save.
+        Falls back to disk for the first call or after a gap in steps.
+        """
+        prev_step = step - 1
+        if (
+            self._prev_manifest is not None
+            and self._prev_manifest.run_id == run_id
+            and self._prev_manifest.step == prev_step
+        ):
+            return self._prev_manifest
+        prev_path = self._registry.get_manifest_path(run_id, prev_step)
         if prev_path is None or not prev_path.exists():
             return None
         try:
             return ManifestReader.read(prev_path)
         except CorruptManifestError:
             warnings.warn(
-                f"Previous manifest for run={run_id!r} step={step - 1} is corrupt — "
+                f"Previous manifest for run={run_id!r} step={prev_step} is corrupt — "
                 "no-op fast path disabled for this checkpoint.",
                 stacklevel=3,
             )
             return None
         except Exception as exc:
             raise StorageError(
-                f"Failed to load previous manifest (run={run_id!r}, step={step - 1}): {exc}"
+                f"Failed to load previous manifest (run={run_id!r}, step={prev_step}): {exc}"
             ) from exc

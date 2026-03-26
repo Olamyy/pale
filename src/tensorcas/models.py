@@ -2,7 +2,7 @@ from typing import List
 
 import msgspec
 
-from pale.errors import CorruptManifestError
+from tensorcas.errors import CorruptManifestError
 
 
 class ChunkRef(msgspec.Struct, frozen=True):

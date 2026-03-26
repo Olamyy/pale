@@ -2,10 +2,10 @@ import sqlite3
 
 import numpy as np
 
-from pale.cas.engine import CASEngine
-from pale.registry.registry import Registry
-from pale.registry.schema import create_tables
-from pale.storage import StorageEngine
+from tensorcas.cas.engine import CASEngine
+from tensorcas.registry.registry import Registry
+from tensorcas.registry.schema import create_tables
+from tensorcas.storage import StorageEngine
 
 
 class DictBackend:

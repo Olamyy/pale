@@ -42,9 +42,9 @@ benchmark/results/*.svg
 # CAS chunk files
 *.chunk
 
-# Pale store directories
-pale_store/
-pale_data/
+# tensorcas store directories
+tensorcas_store/
+tensorcas_data/
 
 *.md
 

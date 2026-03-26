@@ -1,5 +1,5 @@
 import numpy as np
-from pale.serialization import tensor_to_bytes, bytes_to_tensor
+from tensorcas.serialization import tensor_to_bytes, bytes_to_tensor
 
 
 def test_returned_array_is_writeable():

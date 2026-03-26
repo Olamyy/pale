@@ -3,12 +3,12 @@ from typing import List
 
 import numpy as np
 
-from pale.cas.backend import CASBackend
-from pale.chunking import chunk_bytes, reassemble_bytes
-from pale.errors import CorruptChunkError
-from pale.hashing import hash_chunk
-from pale.models import ChunkRef, TensorArrayRecord
-from pale.serialization import bytes_to_tensor, tensor_to_bytes
+from tensorcas.cas.backend import CASBackend
+from tensorcas.chunking import chunk_bytes, reassemble_bytes
+from tensorcas.errors import CorruptChunkError
+from tensorcas.hashing import hash_chunk
+from tensorcas.models import ChunkRef, TensorArrayRecord
+from tensorcas.serialization import bytes_to_tensor, tensor_to_bytes
 
 _DEFAULT_MAX_WORKERS = 8
 

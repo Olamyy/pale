@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 import xgboost as xgb
 
-from pale.adapters.xgboost import XGBoostAdapter
-from pale.errors import AdapterError
+from tensorcas.adapters.xgboost import XGBoostAdapter
+from tensorcas.errors import AdapterError
 
 
 def _trained_booster(n_rounds: int = 10) -> xgb.Booster:
@@ -22,13 +22,13 @@ def _predict(booster: xgb.Booster) -> np.ndarray:
 
 
 def test_extract_contains_skeleton_and_trees():
-    tensors = XGBoostAdapter.extract(_trained_booster(5))
+    tensors = XGBoostAdapter().extract(_trained_booster(5))
     assert "__skeleton__" in tensors
     assert len([k for k in tensors if k.startswith("tree_")]) == 5
 
 
 def test_extract_dtype_uint8():
-    for arr in XGBoostAdapter.extract(_trained_booster(3)).values():
+    for arr in XGBoostAdapter().extract(_trained_booster(3)).values():
         assert arr.dtype == np.uint8
 
 
@@ -42,8 +42,9 @@ def test_frozen_trees_identical_across_warmstart():
     b5 = xgb.train(params, dtrain, num_boost_round=5, verbose_eval=False)
     b8 = xgb.train(params, dtrain, num_boost_round=3, xgb_model=b5, verbose_eval=False)
 
-    t5 = XGBoostAdapter.extract(b5)
-    t8 = XGBoostAdapter.extract(b8)
+    adapter = XGBoostAdapter()
+    t5 = adapter.extract(b5)
+    t8 = adapter.extract(b8)
 
     for i in range(5):
         key = f"tree_{i:06d}"
@@ -53,7 +54,7 @@ def test_frozen_trees_identical_across_warmstart():
 def test_reconstruct_round_trip_predictions():
     booster = _trained_booster()
     preds_before = _predict(booster)
-    tensors = XGBoostAdapter.extract(booster)
+    tensors = XGBoostAdapter().extract(booster)
     reconstructed = XGBoostAdapter.reconstruct(tensors, original=None)
     np.testing.assert_array_equal(preds_before, _predict(reconstructed))
 
@@ -78,4 +79,4 @@ def test_categorical_splits_raise():
     }
     booster = xgb.train(params, dtrain, num_boost_round=2, verbose_eval=False)
     with pytest.raises(AdapterError, match="categorical splits"):
-        XGBoostAdapter.extract(booster)
+        XGBoostAdapter().extract(booster)

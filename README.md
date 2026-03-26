@@ -1,19 +1,21 @@
-# Pale
+# tensorcas
 
-[![CI](https://github.com/Olamyy/pale/actions/workflows/ci.yml/badge.svg)](https://github.com/Olamyy/pale/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue)](https://github.com/Olamyy/pale/blob/main/LICENSE)
-[![GitHub Release](https://img.shields.io/github/v/release/Olamyy/pale?style=flat&sort=semver&color=blue)](https://github.com/Olamyy/pale/releases)
+[![CI](https://github.com/Olamyy/tensorcas/actions/workflows/ci.yml/badge.svg)](https://github.com/Olamyy/tensorcas/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue)](https://github.com/Olamyy/tensorcas/blob/main/LICENSE)
+[![GitHub Release](https://img.shields.io/github/v/release/Olamyy/tensorcas?style=flat&sort=semver&color=blue)](https://github.com/Olamyy/tensorcas/releases)
 
 
-Pale is a framework-agnostic [CAS](https://en.wikipedia.org/wiki/Content-addressable_storage) checkpoint storage for machine learning models.
+tensorcas is a checkpoint storage library for machine learning models that deduplicates checkpoints at the tensor level. It uses [content-addressable storage](https://en.wikipedia.org/wiki/Content-addressable_storage) as its storage layer.
 
 ---
-ML frameworks store checkpoints as complete snapshots (i.e. every weight, every parameter is stored every single time you call `.save`). For tree-based models trained, or neural networks fine-tuned from a pretrained base, most of those weights do not change from previous checkpoints. You end up paying full storage cost to write the same bytes repeatedly.
 
-Pale solves this by operating on the tensors instead of the checkpoint files. By extracting individual trees, layers, and weight matrices directly from the model, it identifies what's actually new and skip everything that isn't. 
-For example, a `warm-start` GBM that adds 10 trees per step stores only those 10 trees; the previous 90 are already on disk.
+ML frameworks store checkpoints as complete snapshots — every weight, every parameter, every time you call `.save`. For warm-start tree models or fine-tuned neural networks, most of those parameters haven't changed since the last checkpoint. You pay full storage cost to write the same bytes repeatedly.
 
-Pale replaces your ``save`` and `load` calls and allows each adapter handle framework specific serialization internally.
+tensorcas solves this by operating on tensors instead of files. Each adapter extracts the model's individual components — trees, layers, weight matrices — as named numpy arrays. tensorcas hashes each array and compares it against the previous checkpoint. Arrays that haven't changed are skipped entirely; only new or updated arrays are written to disk.
+
+For example, a warm-start GBM that adds 10 trees per step writes only those 10 new trees. The previous 90 are already on disk and cost nothing to "save" again.
+
+tensorcas replaces your `save` and `load` calls. Each adapter handles framework-specific serialization internally.
 
 ---
 
@@ -21,9 +23,9 @@ Pale replaces your ``save`` and `load` calls and allows each adapter handle fram
 
 ### Storage savings vs DVC
 
-Measured over 20-step training runs. DVC stores full checkpoints on every save; Pale deduplicates at the tensor level.
+Measured over 20-step training runs. DVC stores full checkpoints on every save; tensorcas deduplicates at the tensor level.
 
-| Framework | Scenario | DVC stores | Pale stores | Savings |
+| Framework | Scenario | DVC stores | tensorcas stores | Savings |
 |-----------|----------|------------|-------------|---------|
 | sklearn | 20 warm-start steps | 1.4 MB | 80 KB | **94%** |
 | XGBoost | 20 warm-start steps | 721 KB | 150 KB | **79%** |
@@ -48,25 +50,25 @@ The no-op fast path (tensor hash matches previous checkpoint → zero writes) is
 
 ```bash
 # pip
-pip install pale
+pip install tensorcas
 
 # uv
-uv add pale
+uv add tensorcas
 ```
 
 Framework adapters are included but their dependencies are optional:
 
 ```bash
 # pip
-pip install "pale[sklearn]"            # scikit-learn
-pip install "pale[xgboost]"            # XGBoost
-pip install "pale[torch]"            # torch
-pip install "pale[sklearn,xgboost,torch]"  # all of the above
+pip install "tensorcas[sklearn]"            # scikit-learn
+pip install "tensorcas[xgboost]"            # XGBoost
+pip install "tensorcas[torch]"            # torch
+pip install "tensorcas[sklearn,xgboost,torch]"  # all of the above
 
 # uv
-uv add "pale[sklearn]"
-uv add "pale[xgboost]"
-uv add "pale[torch]"
+uv add "tensorcas[sklearn]"
+uv add "tensorcas[xgboost]"
+uv add "tensorcas[torch]"
 ```
 ---
 
@@ -76,12 +78,12 @@ uv add "pale[torch]"
 from pathlib import Path
 import torch
 import torch.nn as nn
-from pale.store import PaleStore
-from pale.adapters.pytorch import PyTorchAdapter
+from tensorcas.store import TensorCasStore
+from tensorcas.adapters.pytorch import PyTorchAdapter
 
 model = nn.Sequential(nn.Linear(128, 64), nn.ReLU(), nn.Linear(64, 10))
 
-store = PaleStore(
+store = TensorCasStore(
     root=Path("./checkpoints"),
     run_id="mlp-run-001",
     adapter=PyTorchAdapter(),
@@ -108,40 +110,10 @@ print(store.stats())
 
 | Framework | Adapter class | Supported model types |
 |-----------|--------------|----------------------|
-| scikit-learn | `pale.adapters.sklearn.SklearnAdapter` | `GradientBoostingClassifier`, `GradientBoostingRegressor`, `LogisticRegression`, any model with `coef_` / `intercept_` |
-| XGBoost | `pale.adapters.xgboost.XGBoostAdapter` | `xgb.Booster` |
-| PyTorch | `pale.adapters.pytorch.PyTorchAdapter` | Any model with a `state_dict()` |
+| scikit-learn | `tensorcas.adapters.sklearn.SklearnAdapter` | `GradientBoostingClassifier`, `GradientBoostingRegressor`, `LogisticRegression`, any model with `coef_` / `intercept_` |
+| XGBoost | `tensorcas.adapters.xgboost.XGBoostAdapter` | `xgb.Booster` |
+| PyTorch | `tensorcas.adapters.pytorch.PyTorchAdapter` | Any model with a `state_dict()` |
 | Custom | Implement `ModelAdapter` | `extract(model) -> Dict[str, ndarray]` and `reconstruct(tensors, original) -> model` |
-
----
-
-## Core concepts
-
-**Run and step.** A run is a training experiment, identified by a string `run_id`. A step is a checkpoint within that run, identified by an integer. Multiple runs can share the same store root — deduplication works across runs.
-
-**Content-addressable storage.** Every tensor is split into fixed-size chunks (default 1 MiB). Each chunk is stored once, keyed by its BLAKE3 hash, under `{root}/objects/`. If two checkpoints — in the same run or different runs — contain identical chunks, only one copy exists on disk. The SQLite registry at `{root}/registry.db` tracks which chunks belong to which checkpoints, and a grace-period GC sweeps orphaned chunks after deletion.
-
-**No-op fast path.** Before splitting a tensor into chunks, Pale hashes the full tensor and compares it against the previous checkpoint's manifest. If the hash matches, the entire tensor is skipped — no chunking, no dedup check, no CAS writes. This is where most of the savings come from: a warm-start GBM that adds trees each step has all existing trees frozen; only the new trees produce writes.
-
----
-
-## CLI
-
-```bash
-pale --root ./checkpoints list
-pale --root ./checkpoints list --run mlp-run-001
-pale --root ./checkpoints stats
-pale --root ./checkpoints stats --run mlp-run-001 --format json
-pale --root ./checkpoints gc --grace 24 --yes
-pale --root ./checkpoints delete --run mlp-run-001 --step 3 --yes
-```
-
-| Command | What it does |
-|---------|-------------|
-| `list` | List all runs and their steps. `--run` scopes to one run. |
-| `stats` | Dedup statistics: chunk counts, unique chunks, dedup ratio, total bytes. |
-| `gc` | Sweep orphaned blobs older than `--grace` hours (default 24). Prompts unless `--yes`. |
-| `delete` | Delete a single checkpoint. Blob files are cleaned by the next `gc`. Prompts unless `--yes`. |
 
 ---
 
@@ -151,7 +123,7 @@ pale --root ./checkpoints delete --run mlp-run-001 --step 3 --yes
 User / Framework
       │ model object
       ▼
-PaleStore                          (store.py)
+TensorCasStore                          (store.py)
   save / load / gc / stats
       │ Dict[str, ndarray]              │ registry queries
       ▼                                 ▼
@@ -178,6 +150,51 @@ FilesystemBackend                  (cas/filesystem.py)
   zstd compression, atomic writes
 ```
 
+### Core concepts
+
+- **Run and step.** A run is a training experiment, identified by a string `run_id`. A step is a checkpoint within that run, identified by an integer. Multiple runs can share the same store root — deduplication works across runs.
+
+- **Content-addressable storage.** Every tensor is split into fixed-size chunks (default 256 KB) and each chunk is stored once, keyed by its BLAKE3 hash, under `{root}/objects/`. The SQLite registry at `{root}/registry.db` tracks which checkpoints reference which chunks. A grace-period GC sweeps unreferenced chunks after checkpoint deletion.
+
+- **No-op fast path.** Before writing anything, tensorcas hashes the full tensor and compares it against the previous checkpoint's manifest. If the hash matches, the tensor is skipped entirely — no chunking, no CAS write, no disk I/O. This is the primary source of storage savings: frozen trees, frozen layers, and unchanged weight matrices are identified in memory and never written again. At 0.5–1.9 ms per step for typical models, the no-op path is effectively free.
+
+---
+
+## Known limitations
+
+**PyTorch: BatchNorm running statistics update in train mode.**
+Freezing layers via `requires_grad_(False)` does not prevent BatchNorm buffers (`running_mean`, `running_var`, `num_batches_tracked`) from updating — they are updated on every forward pass in `model.train()` mode regardless. For ResNet-18 this means 80 of 122 state dict tensors change every epoch even when the entire backbone is frozen, capping the no-op rate at ~48% instead of the theoretical ~99%.
+
+If you want these buffers to stop changing, call `model.eval()` before saving:
+
+```python
+model.eval()
+store.save(model, step=epoch)
+model.train()
+```
+
+This freezes running stats to their current values. The trade-off is that saved checkpoints reflect eval-mode statistics, not the running averages from the most recent training batches.
+
+---
+
+## CLI
+
+```bash
+tensorcas --root ./checkpoints list
+tensorcas --root ./checkpoints list --run mlp-run-001
+tensorcas --root ./checkpoints stats
+tensorcas --root ./checkpoints stats --run mlp-run-001 --format json
+tensorcas --root ./checkpoints gc --grace 24 --yes
+tensorcas --root ./checkpoints delete --run mlp-run-001 --step 3 --yes
+```
+
+| Command | What it does |
+|---------|-------------|
+| `list` | List all runs and their steps. `--run` scopes to one run. |
+| `stats` | Dedup statistics: chunk counts, unique chunks, dedup ratio, total bytes. |
+| `gc` | Sweep orphaned blobs older than `--grace` hours (default 24). Prompts unless `--yes`. |
+| `delete` | Delete a single checkpoint. Blob files are cleaned by the next `gc`. Prompts unless `--yes`. |
+
 ---
 
 ## Development
@@ -192,7 +209,7 @@ The test suite requires `xgboost` and `torch` (installed as dev dependencies via
 
 **Add an adapter**
 
-Implement the `ModelAdapter` protocol from `pale.adapters.base`:
+Implement the `ModelAdapter` protocol from `tensorcas.adapters.base`:
 
 ```python
 class ModelAdapter(Protocol):
@@ -209,4 +226,4 @@ class ModelAdapter(Protocol):
 
 `original` is required for adapters that cannot reconstruct a model from tensors alone — for example, sklearn's internal Cython tree structures cannot be built from scratch and need a fitted model as a template. PyTorch adapters typically don't need it.
 
-See `src/pale/adapters/sklearn.py` for a reference implementation.
+See `src/tensorcas/adapters/sklearn.py` for a reference implementation.

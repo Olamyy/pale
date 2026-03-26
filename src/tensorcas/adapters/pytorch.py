@@ -2,8 +2,8 @@ from typing import Any, Dict
 
 import numpy as np
 
-from pale.adapters.deps import require
-from pale.errors import AdapterError
+from tensorcas.adapters.deps import require
+from tensorcas.errors import AdapterError
 
 
 class PyTorchAdapter:

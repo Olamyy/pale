@@ -4,8 +4,8 @@ from typing import Any, Dict
 import numpy as np
 import pytest
 
-from pale.errors import CheckpointNotFoundError
-from pale.store import PaleStore
+from tensorcas.errors import CheckpointNotFoundError
+from tensorcas.store import TensorCasStore
 
 
 class DictAdapter:
@@ -25,8 +25,8 @@ def _model(seed: int = 0) -> Dict[str, np.ndarray]:
 
 
 @pytest.fixture()
-def store(tmp_path: Path) -> PaleStore:
-    return PaleStore(root=tmp_path, run_id="run1", adapter=DictAdapter())
+def store(tmp_path: Path) -> TensorCasStore:
+    return TensorCasStore(root=tmp_path, run_id="run1", adapter=DictAdapter())
 
 
 def test_load_passes_original_to_adapter(tmp_path):
@@ -40,7 +40,7 @@ def test_load_passes_original_to_adapter(tmp_path):
             received["original"] = original
             return tensors
 
-    store = PaleStore(root=tmp_path, run_id="r", adapter=CapturingAdapter())
+    store = TensorCasStore(root=tmp_path, run_id="r", adapter=CapturingAdapter())
     store.save(np.zeros(4, dtype=np.float32), step=1)
     sentinel = object()
     store.load(step=1, original=sentinel)
@@ -60,7 +60,7 @@ def test_delete_checkpoint_removes_from_list(store):
 
 
 def test_gc_deletes_chunk_files_for_orphaned_blobs(tmp_path):
-    store = PaleStore(root=tmp_path, run_id="run1", adapter=DictAdapter())
+    store = TensorCasStore(root=tmp_path, run_id="run1", adapter=DictAdapter())
     store.save(_model(0), step=1)
     store.delete_checkpoint(step=1)
     store._registry._conn.execute("UPDATE blobs SET created_at = '2000-01-01 00:00:00'")

@@ -5,8 +5,8 @@ from typing import Dict, List
 
 import zstandard as zstd
 
-from pale.cas.backend import CASBackend
-from pale.errors import CorruptChunkError, StorageError
+from tensorcas.cas.backend import CASBackend
+from tensorcas.errors import CorruptChunkError, StorageError
 
 _ZSTD_LEVEL = 3
 

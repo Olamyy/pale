@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     parent_step     INTEGER,
     manifest_path   TEXT NOT NULL,
     created_at      TEXT NOT NULL,
+    metrics         TEXT DEFAULT NULL,
     UNIQUE (run_id, step)
 );
 

@@ -98,6 +98,35 @@ def test_pytorch_full_round_trip(tmp_path):
     np.testing.assert_array_equal(preds_before, preds_after)
 
 
+def test_metrics_saved_and_queryable(tmp_path):
+    model = _sklearn_model()
+    with TensorCasStore(root=tmp_path, run_id="r", adapter=SklearnAdapter()) as store:
+        store.save(model, step=1, metrics={"val_loss": 0.8, "val_accuracy": 0.70})
+        store.save(model, step=2, metrics={"val_loss": 0.5, "val_accuracy": 0.85})
+        store.save(model, step=3, metrics={"val_loss": 0.6, "val_accuracy": 0.80})
+        assert store.best("val_loss", mode="min") == 2
+        assert store.best("val_accuracy", mode="max") == 2
+        rows = store.list_checkpoints_with_metrics()
+    assert len(rows) == 3
+    assert rows[0] == {"step": 1, "metrics": {"val_loss": 0.8, "val_accuracy": 0.70}}
+    assert rows[1]["step"] == 2
+
+
+def test_best_returns_none_for_missing_metric(tmp_path):
+    model = _sklearn_model()
+    with TensorCasStore(root=tmp_path, run_id="r", adapter=SklearnAdapter()) as store:
+        store.save(model, step=1, metrics={"val_loss": 0.5})
+        assert store.best("val_accuracy", mode="max") is None
+
+
+def test_save_without_metrics_still_works(tmp_path):
+    model = _sklearn_model()
+    with TensorCasStore(root=tmp_path, run_id="r", adapter=SklearnAdapter()) as store:
+        store.save(model, step=1)
+        rows = store.list_checkpoints_with_metrics()
+    assert rows[0] == {"step": 1, "metrics": None}
+
+
 def test_cross_framework_store_stats(tmp_path):
     with TensorCasStore(root=tmp_path, run_id="sk", adapter=SklearnAdapter()) as store:
         store.save(_sklearn_model(), step=1)

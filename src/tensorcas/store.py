@@ -55,8 +55,22 @@ class TensorCasStore:
         self._registry = registry
         self._cas = cas
 
-    def save(self, model: Any, step: int, parent_step: Optional[int] = None) -> None:
+    def save(
+        self,
+        model: Any,
+        step: int,
+        parent_step: Optional[int] = None,
+        metrics: Optional[Dict[str, float]] = None,
+    ) -> None:
         """Extract tensors from model and save as checkpoint (run_id, step).
+
+        Args:
+            model:       The model to checkpoint.
+            step:        Training step (epoch number, tree-addition step, etc.).
+            parent_step: Step of the preceding checkpoint for delta lineage.
+            metrics:     Optional training metrics to store with this checkpoint,
+                         e.g. {"val_loss": 0.42, "val_accuracy": 0.91}.
+                         Queryable later via best() and list_checkpoints().
 
         Raises:
             AdapterError:                 if tensor extraction fails.
@@ -69,6 +83,7 @@ class TensorCasStore:
             step=step,
             tensors=tensors,
             parent_step=parent_step,
+            metrics=metrics,
         )
 
     def load(self, step: int, original: Any = None) -> Any:
@@ -94,6 +109,32 @@ class TensorCasStore:
     def list_checkpoints(self) -> List[int]:
         """Return all saved steps for this run in ascending order."""
         return self._registry.list_checkpoints(self._run_id)
+
+    def list_checkpoints_with_metrics(self) -> List[Dict[str, Any]]:
+        """Return all checkpoints with their metrics dicts.
+
+        Each entry is {"step": int, "metrics": dict | None}.
+        Steps are returned in ascending order.
+        """
+        return self._registry.list_checkpoints_with_metrics(self._run_id)
+
+    def best(self, metric: str, mode: str = "min") -> Optional[int]:
+        """Return the step with the best value for metric.
+
+        Args:
+            metric: Key to compare, e.g. "val_loss" or "val_accuracy".
+            mode:   "min" for metrics where lower is better (loss, perplexity).
+                    "max" for metrics where higher is better (accuracy, F1).
+
+        Returns:
+            The step number with the best value, or None if no checkpoints
+            have the requested metric.
+
+        Example:
+            best_epoch = store.best("val_loss", mode="min")
+            model = store.load(step=best_epoch, original=model)
+        """
+        return self._registry.best_checkpoint(self._run_id, metric, mode)
 
     def delete_checkpoint(self, step: int) -> None:
         """Delete checkpoint (run_id, step) from the registry.

@@ -2,7 +2,7 @@ import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING, Dict, Optional
 
 import msgspec
 
@@ -22,6 +22,7 @@ class CheckpointManifest(msgspec.Struct, frozen=True):
     tensors: Dict[str, TensorArrayRecord]
     format_version: int = 1
     tensorcas_version: str = __version__
+    metrics: Dict[str, float] = {}
 
     def __repr__(self) -> str:
         return (

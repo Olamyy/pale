@@ -1,9 +1,10 @@
+import json
 import sqlite3
 import uuid
 import warnings
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional
+from typing import Any, Dict, List, NamedTuple, Optional
 
 from tensorcas.errors import CheckpointAlreadyExistsError, CorruptManifestError
 
@@ -67,6 +68,7 @@ class Registry:
                     parent_step     INTEGER,
                     manifest_path   TEXT NOT NULL,
                     created_at      TEXT NOT NULL,
+                    metrics         TEXT DEFAULT NULL,
                     UNIQUE(run_id, step)
                 );
 
@@ -81,6 +83,13 @@ class Registry:
                 CREATE INDEX IF NOT EXISTS idx_checkpoints_run_step
                     ON checkpoints(run_id, step);
             """)
+        # Migrate existing DBs that predate the metrics column.
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(checkpoints)")}
+        if "metrics" not in cols:
+            with self._conn:
+                self._conn.execute(
+                    "ALTER TABLE checkpoints ADD COLUMN metrics TEXT"
+                )
 
     def list_runs(self) -> List[str]:
         """Return all run_ids in ascending order."""
@@ -122,6 +131,7 @@ class Registry:
         new_blob_hashes: Optional[List[str]] = None,
         blob_sizes: Optional[Dict[str, int]] = None,
         parent_step: Optional[int] = None,
+        metrics: Optional[Dict[str, float]] = None,
     ) -> None:
         """Register a checkpoint and record any newly written blobs.
 
@@ -154,6 +164,7 @@ class Registry:
         checkpoint_id = str(uuid.uuid4())
         sizes = blob_sizes or {}
         blobs_to_insert = new_blob_hashes if new_blob_hashes is not None else blob_hashes
+        metrics_json = json.dumps(metrics) if metrics else None
 
         with self._conn:
             self._conn.execute(
@@ -168,10 +179,61 @@ class Registry:
                 )
             self._conn.execute(
                 "INSERT INTO checkpoints "
-                "(checkpoint_id, run_id, step, parent_step, manifest_path, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (checkpoint_id, run_id, step, parent_step, str(manifest_path), now),
+                "(checkpoint_id, run_id, step, parent_step, manifest_path, created_at, metrics) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (checkpoint_id, run_id, step, parent_step, str(manifest_path), now, metrics_json),
             )
+
+    def list_checkpoints_with_metrics(
+        self, run_id: str
+    ) -> List[Dict[str, Any]]:
+        """Return all checkpoints for run_id with their metrics.
+
+        Each entry is a dict with keys: step, metrics (dict or None).
+        Steps are returned in ascending order.
+        """
+        rows = self._conn.execute(
+            "SELECT step, metrics FROM checkpoints WHERE run_id = ? ORDER BY step",
+            (run_id,),
+        ).fetchall()
+        return [
+            {"step": row[0], "metrics": json.loads(row[1]) if row[1] else None}
+            for row in rows
+        ]
+
+    def best_checkpoint(
+        self, run_id: str, metric: str, mode: str = "min"
+    ) -> Optional[int]:
+        """Return the step with the best value for metric.
+
+        mode="min" returns the step with the lowest value (e.g. val_loss).
+        mode="max" returns the step with the highest value (e.g. val_accuracy).
+
+        Returns None if no checkpoints have the requested metric.
+        """
+        if mode not in ("min", "max"):
+            raise ValueError(f"mode must be 'min' or 'max', got {mode!r}")
+        rows = self._conn.execute(
+            "SELECT step, metrics FROM checkpoints WHERE run_id = ? AND metrics IS NOT NULL ORDER BY step",
+            (run_id,),
+        ).fetchall()
+        best_step: Optional[int] = None
+        best_val: Optional[float] = None
+        for step, metrics_json in rows:
+            metrics = json.loads(metrics_json)
+            if metric not in metrics:
+                continue
+            val = float(metrics[metric])
+            if best_val is None:
+                best_val = val
+                best_step = step
+            elif mode == "min" and val < best_val:
+                best_val = val
+                best_step = step
+            elif mode == "max" and val > best_val:
+                best_val = val
+                best_step = step
+        return best_step
 
     def delete_checkpoint(self, run_id: str, step: int) -> None:
         """Delete a checkpoint row.

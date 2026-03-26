@@ -52,6 +52,7 @@ class StorageEngine:
         step: int,
         tensors: Dict[str, np.ndarray],
         parent_step: Optional[int] = None,
+        metrics: Optional[Dict[str, float]] = None,
     ) -> CheckpointManifest:
         """Save a checkpoint transactionally.
 
@@ -116,6 +117,7 @@ class StorageEngine:
             step=step,
             created_at=datetime.now(timezone.utc),
             tensors=records,
+            metrics=metrics or {},
         )
         try:
             ManifestWriter.write(manifest, manifest_path)
@@ -140,6 +142,7 @@ class StorageEngine:
                 new_blob_hashes=new_blob_hashes,
                 blob_sizes=new_blob_sizes,
                 parent_step=parent_step,
+                metrics=metrics,
             )
         except CheckpointAlreadyExistsError:
             try:

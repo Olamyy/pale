@@ -53,3 +53,6 @@ tensorcas_data/
 *.iml
 benchmark/colab_dedup_analysis.py
 manifests/*
+*.pdf
+dsd/*
+other/*
